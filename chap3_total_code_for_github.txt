@@ -1,0 +1,1646 @@
+###Flora Whiting-Fawcett: Code for Myotis brandtii population genetics
+
+#set the working directory for this project
+workdir=$HOME/Datafiles/Bats/Brandtii_Eu_Pop
+
+
+##1: FILE QC AND FILE PREP
+#running fastqc to qc the files
+cd $workdir/Trimmed #move into the file containing all the sample sequencing files
+ls */*.fastq.gz > fastq.names #create a list of all of the fastq files
+
+#run fastq on all of the files
+while read p; do
+	echo $p "started";
+	fastqc ${p};
+	echo $p "finished"
+done < fastq.names
+
+#getting a list of all of the sample names
+ls -d Samp* > samp_names
+
+#set as a shell variable
+samp_names=$workdir/Trimmed/samp_names
+
+#adding in extra lane of data, have to change the file names so they match
+#add in new plate details, no $ needed
+plate=230303_L005
+
+######first have to rename all the files so they are in the expected format of the others!!
+cd $workdir/Trimmed_extralane #move into the folder with the new samples
+
+find . -name *.gz > names #get list of all the files and their paths
+
+touch rename.sh #create blank files
+
+#strip the file names by _, assign each section to a variable, then use this to create a bash file
+while read file; do
+	a=$(echo $file | awk -F_ '{print $1}')
+	b=$(echo $file | awk -F_ '{print $2}') 
+	c=$(echo $file | awk -F_ '{print $5}')
+	d=$(echo $file | awk -F_ '{print $6}')
+	echo mv $file ${a}_${b}_${plate}_${c}_${d} >> rename.sh
+done < names
+
+sed -i 's/_001.fast/.fast/2' rename.sh #get rid of the final _001.
+
+bash rename.sh #run this file
+
+#run fastqc so the new qc files are in the same folders as the new ones, and I can call multiqc over all of them
+while read p; do echo Sample_${p}; fastqc -t 12 Sample_${p}/${p}_${plate}_R0.fastq.gz -o ../Trimmed/Sample_${p}; fastqc -t 12 Sample_${p}/${p}_${plate}_R1.fastq.gz -o ../Trimmed/Sample_${p}; fastqc -t 12 Sample_${p}/${p}_${plate}_R2.fastq.gz -o ../Trimmed/Sample_${p}; done < $samp_names
+
+
+#create directory for the multiqc
+mkdir $workdir/multiqc
+mkdir $workdir/multiqc/pre_trimming
+mkdir $workdir/multiqc/post_trimming
+mkdir $workdir/multiqc/pre_trimming/R0
+mkdir $workdir/multiqc/pre_trimming/R1
+mkdir $workdir/multiqc/pre_trimming/R2
+mkdir $workdir/multiqc/pre_trimming/R0/data
+mkdir $workdir/multiqc/pre_trimming/R1/data
+mkdir $workdir/multiqc/pre_trimming/R2/data
+mkdir $workdir/multiqc/post_trimming/R1
+mkdir $workdir/multiqc/post_trimming/R2
+mkdir $workdir/multiqc/post_trimming/R1/data
+mkdir $workdir/multiqc/post_trimming/R2/data
+
+#move the data into various folders for the multiqc to read
+cd $workdir/Trimmed
+find . -name '*R0_fastqc.zip' -type f | xargs cp -t ../multiqc/pre_trimming/R0/data/.
+find . -name '*R1_fastqc.zip' -type f | xargs cp -t ../multiqc/pre_trimming/R1/data/.
+find . -name '*R2_fastqc.zip' -type f | xargs cp -t ../multiqc/pre_trimming/R2/data/.
+cd ..
+
+#run multiqc #multiqc will not run on debian 11, started in watt26
+multiqc Trimmed/*/*_R0_fastqc.zip -o multiqc/pre_trimming/R0
+multiqc Trimmed/*/*_R1_fastqc.zip -o multiqc/pre_trimming/R1
+multiqc Trimmed/*/*_R2_fastqc.zip -o multiqc/pre_trimming/R2
+
+
+#TRIMMING AND RE-QCING 
+#trim the original first three lanes
+cd $workdir/Trimmed
+mkdir $workdir/fastp_trimming #make directory for the trimmed sequences to got in
+#make a directory for each of the samples
+while read p; do
+	mkdir ../fastp_trimming/Sample_${p};
+done < $samp_names
+
+#run fastp
+while read p; do
+	echo Sample_${p}_L001 fastp;
+	fastp -i Sample_${p}/${p}_220512_L001_R1.fastq.gz -I Sample_${p}/${p}_220512_L001_R2.fastq.gz -q 20 --trim_front2 6 -o "../fastp_trimming/Sample_${p}/trimmed_${p}_220512_L001_R1.fastq.gz" -O "../fastp_trimming/Sample_${p}/trimmed_${p}_220512_L001_R2.fastq.gz" --html "../fastp_trimming/Sample_${p}/report-Sample_${p}_L001.html";
+	echo Sample_${p}_L002 fastp;
+	fastp -i Sample_${p}/${p}_220512_L002_R1.fastq.gz -I Sample_${p}/${p}_220512_L002_R2.fastq.gz -q 20 --trim_front2 6 -o "../fastp_trimming/Sample_${p}/trimmed_${p}_220512_L002_R1.fastq.gz" -O "../fastp_trimming/Sample_${p}/trimmed_${p}_220512_L002_R2.fastq.gz" --html "../fastp_trimming/Sample_${p}/report-Sample_${p}_L002.html";
+	echo Sample_${p}_L004 fastp;
+	fastp -i Sample_${p}/${p}_220525_L004_R1.fastq.gz -I Sample_${p}/${p}_220525_L004_R2.fastq.gz -q 20 --trim_front2 6 -o "../fastp_trimming/Sample_${p}/trimmed_${p}_220525_L004_R1.fastq.gz" -O "../fastp_trimming/Sample_${p}/trimmed_${p}_220525_L004_R2.fastq.gz" --html "../fastp_trimming/Sample_${p}/report-Sample_${p}_L004.html";
+done < samp_names
+
+#run fastqc on the trimmed files
+while read p; do
+	echo Sample_${p}_L001 fastqc;
+	fastqc -t 12 $workdir/fastp_trimming/Sample_${p}/trimmed_${p}_220512_L001_R1.fastq.gz -o $workdir/multiqc/post_trimming/R1/data/Sample_${p}/;
+	fastqc -t 12 $workdir/fastp_trimming/Sample_${p}/trimmed_${p}_220512_L001_R2.fastq.gz -o $workdir/multiqc/post_trimming/R2/data/Sample_${p};
+	echo Sample_${p}_L002 fastqc;
+	fastqc -t 12 $workdir/fastp_trimming/Sample_${p}/trimmed_${p}_220512_L002_R1.fastq.gz -o $workdir/multiqc/post_trimming/R1/data/Sample_${p};
+	fastqc -t 12 $workdir/fastp_trimming/Sample_${p}/trimmed_${p}_220512_L002_R2.fastq.gz -o $workdir/multiqc/post_trimming/R2/data/Sample_${p};
+	echo Sample_${p}_L004 fastqc;
+	fastqc -t 12 $workdir/fastp_trimming/Sample_${p}/trimmed_${p}_220525_L004_R1.fastq.gz -o $workdir/multiqc/post_trimming/R1/data/Sample_${p};
+	fastqc -t 12 $workdir/fastp_trimming/Sample_${p}/trimmed_${p}_220525_L004_R2.fastq.gz -o $workdir/multiqc/post_trimming/R2/data/Sample_${p};
+done < samp_names
+
+#trim the extra lane
+cd $workdir/Trimmed_extralane
+#run the fastp trimmed, porting the results into the fastp_trimming directory
+while read p; do echo Sample_${p}_$plate fastp; fastp -i Sample_${p}/${p}_${plate}_R1.fastq.gz -I Sample_${p}/${p}_${plate}_R2.fastq.gz -q 20 --trim_front2 6 -o "../fastp_trimming/Sample_${p}/trimmed_${p}_${plate}_R1.fastq.gz" -O "../fastp_trimming/Sample_${p}/trimmed_${p}_${plate}_R2.fastq.gz" --html "../fastp_trimming/Sample_${p}/report-Sample_${p}_${plate}.html"; done < $samp_names
+
+#run fastqc on these new files
+#move into the fastp_trimming folder
+cd $workdir/fastp_trimming
+#run fastqc so the new qc files are in the same folders as the new ones, and I can call multiqc over all of them
+while read p; do echo Sample_${p}; fastqc -t 12 Sample_${p}/trimmed_${p}_${plate}_R1.fastq.gz -o $workdir/multiqc/post_trimming/R1/data/Sample_${p}; fastqc -t 12 Sample_${p}/trimmed_${p}_${plate}_R2.fastq.gz -o $workdir/multiqc/post_trimming/R2/data/Sample_${p}; done < $samp_names
+
+#run multiqc on the data
+multiqc multiqc/post_trimming/R1/data -o multiqc/post_trimming/R1
+multiqc multiqc/post_trimming/R2/data -o multiqc/post_trimming/R2
+
+#REMOVING FAILING SAMPLES
+#choose which samples you are removing, based on the qc
+#be in the fastp_trimming directory
+cd $workdir/fastp_trimming
+#make directory to move the failing samples into
+mkdir failed_samples
+#move the failing samples into this folder
+#removing three samples M5004, Mbr8, and AL152 
+mv Sample_98-M5004 failed_samples/Sample_98-M5004
+mv Sample_100-Mbr8 failed_samples/Sample_100-Mbr8
+mv Sample_136-AL152 failed_samples/Sample_136-AL152
+
+#create a new sample list
+ls -d Sample* > samp_names2
+#remove the Sample_ start of each of the lines
+sed -i 's/Sample_//g' samp_names2
+
+#add in the new samp names as an shell variable
+samp_names2=$workdir/fastp_trimming/samp_names2
+
+
+
+
+
+
+
+
+####2. COLLAPSING READS
+#collapsing reads can improve the mapping rate
+# want to do this to my trimmed samples
+workdir=$HOME/Datafiles/Bats/Brandtii_Eu_pop
+samp_names=$workdir/fastp_trimming/samp_names2
+
+#make directory for collapsed reads
+mkdir $workdir/collapsed_reads
+
+while read p; do
+	mkdir $workdir/collapsed_reads/Sample_${p};
+done < $samp_names
+
+while read samp; do
+a1=$workdir/fastp_trimming/Sample_${samp}/trimmed_${samp}_220512_L001_R1.fastq.gz;
+a2=$workdir/fastp_trimming/Sample_${samp}/trimmed_${samp}_220512_L001_R2.fastq.gz;
+AdapterRemoval --file1 $a1 --file2 $a2 --basename $workdir/collapsed_reads/Sample_${samp}/${samp}_220512_L001_paired --collapse;
+b1=$workdir/fastp_trimming/Sample_${samp}/trimmed_${samp}_220512_L002_R1.fastq.gz;
+b2=$workdir/fastp_trimming/Sample_${samp}/trimmed_${samp}_220512_L002_R2.fastq.gz;
+AdapterRemoval --file1 $b1 --file2 $b2 --basename $workdir/collapsed_reads/Sample_${samp}/${samp}_220512_L002_paired --collapse;
+c1=$workdir/fastp_trimming/Sample_${samp}/trimmed_${samp}_220525_L004_R1.fastq.gz;
+c2=$workdir/fastp_trimming/Sample_${samp}/trimmed_${samp}_220525_L004_R2.fastq.gz;
+AdapterRemoval --file1 $c1 --file2 $c2 --basename $workdir/collapsed_reads/Sample_${samp}/${samp}_220525_L004_paired --collapse;
+d1=$workdir/fastp_trimming/Sample_${samp}/trimmed_${samp}_230303_L005_R1.fastq.gz;
+d2=$workdir/fastp_trimming/Sample_${samp}/trimmed_${samp}_230303_L005_R2.fastq.gz;
+AdapterRemoval --file1 $d1 --file2 $d2 --basename $workdir/collapsed_reads/Sample_${samp}/${samp}_230303_L005_paired --collapse;
+done < $samp_names
+
+
+#concatenate the files together
+while read samp; do
+	cat $workdir/collapsed_reads/Sample_${samp}/${samp}*paired.pair1.truncated > $workdir/collapsed_reads/Sample_${samp}/${samp}_total_paired.pair1.truncated;
+	cat $workdir/collapsed_reads/Sample_${samp}/${samp}*paired.pair2.truncated > $workdir/collapsed_reads/Sample_${samp}/${samp}_total_paired.pair2.truncated;
+	cat $workdir/collapsed_reads/Sample_${samp}/${samp}*paired.collapsed > $workdir/collapsed_reads/Sample_${samp}/${samp}_total_paired.collapsed;
+done < $samp_names
+
+
+
+
+
+
+
+
+
+
+
+
+####3. MAPPING THE COLLAPSED READS
+#set working directory
+workdir=$HOME/Datafiles/Bats/Brandtii_Eu_pop
+#set location for the reference genome - using myomyo as it has better mapping rates and is better annotated
+myo_ref=$HOME/Datafiles/Bats/myomyo/GCF_014108235.1_mMyoMyo1.p_genomic.fna
+#set location of the sample names
+samp_names=$workdir/fastp_trimming/samp_names2
+
+#make mapping directory
+mkdir -p $workdir/mapping_collapsed
+mkdir -p $workdir/mapping_collapsed/map_to_myomyo
+mkdir -p $workdir/mapping_collapsed/map_to_myomyo/bams
+mkdir -p $workdir/mapping_collapsed/map_to_myomyo/logs
+
+#make scratch directory for myomyo mapping 
+scratchdir2=/scratch/flora2
+mkdir -p $scratchdir2
+
+while read samp; do
+	echo $samp for myomyo;
+	R1=$workdir/collapsed_reads/Sample_${samp}/${samp}_total_paired.pair1.truncated;
+	R2=$workdir/collapsed_reads/Sample_${samp}/${samp}_total_paired.pair2.truncated;
+	collapsed=$workdir/collapsed_reads/Sample_${samp}/${samp}_total_paired.collapsed;
+	#MYOMYO MAPPING
+	#does the mapping and sends through samtools into an unsorted bam file. It takes a while.
+	bowtie2 -x $myo_ref --sensitive-local -p 64 -1 $R1 -2 $R2 -U $collapsed | samtools view -b - -o $scratchdir2/1.${samp}.bam;
+	#sort the bamfile by genome coordinate #added -o to specify output file
+	samtools sort -@ 16 $scratchdir2/1.${samp}.bam -o $scratchdir2/2.${samp}.bam;
+	#get some stats on the mapping #takes abt 2 mins,
+	samtools flagstat $scratchdir2/2.${samp}.bam > $workdir/mapping_collapsed/map_to_myomyo/logs/${samp}.flagstat &
+	#I'm nt sure the next line is even needed. gets some information on the bam file sorted before running GATK
+	#I=input.bam, O=output.bam, RGID=read group ID (sample number), RGLB= read group library (sample number), RGPL= read group platform (eg illumina), RGPU= Read groupp platform unit (sample number), RGSM= read group sample name (sample number)
+	picard AddOrReplaceReadGroups I=$scratchdir2/2.${samp}.bam O=$scratchdir2/3.${samp}.bam RGID=${samp} RGLB=${samp} RGPL=Illumina RGSM=${samp} RGPU=${samp};
+	#gets rid of any duplicated reads, eg PCR duplicates
+	picard MarkDuplicates INPUT=$scratchdir2/3.${samp}.bam OUTPUT=$workdir/mapping_collapsed/map_to_myomyo/bams/${samp}.rmdup.bam METRICS_FILE=$workdir/mapping_collapsed/map_to_myomyo/logs/${samp}.rmdupMetrics.txt REMOVE_DUPLICATES=true ASSUME_SORTED=true VALIDATION_STRINGENCY=LENIENT MAX_FILE_HANDLES_FOR_READ_ENDS_MAP=1000;
+	#then index
+	samtools index $workdir/mapping_collapsed/map_to_myomyo/bams/${samp}.rmdup.bam;
+done < $samp_names
+
+echo "mapping complete"
+
+
+
+
+
+
+
+
+######4. ANGSD VARIANT CALLING
+workdir=$HOME/Datafiles/Bats/Brandtii_Eu_pop
+#make directory for the snps
+mkdir $workdir/variant_calling
+mkdir $workdir/variant_calling/angsd
+mkdir $workdir/variant_calling/angsd_highQ
+
+samp_names=$workdir/fastp_trimming/samp_names2
+cp $samp_names $workdir/fastp_trimming/bam_list
+sed -i -e 's#^#/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/#' $workdir/fastp_trimming/bam_list
+sed -i 's/$/.rmdup.bam/g' $workdir/fastp_trimming/bam_list
+
+#set the shell variables
+bamlist=$workdir/fastp_trimming/bam_list
+myo_ref=$HOME/Datafiles/Bats/myomyo/GCF_014108235.1_mMyoMyo1.p_genomic.fna
+GL=1 #samtools methodology used
+doGLF=2 #creates beagle likelihood file
+doMajorMinor=1 #do major minor
+doMaf=1 #get minor allele freq
+uniqueOnly=1 #only unique sites (not those with multiple best hits)
+removebads=1 #removes reads with a flag above 255 (failed and duplicate reads, and reads not in the primary alignment)
+onlyproperpairs=0 #use all reads, not just those properly paired
+trim=0 #dont take trim anything off
+c=50 #adjust the mapQ for excessive mismatches, suggested for bwa mapped is 50
+baq=1 #performs the BAQ computation, this is the default in SAMtools
+setmaxdepth=14600 #discard site if total sequencing depth (all individuals added together) is over the value provided
+minmaf=0.05 #minimum minor allele frequency 
+minind=100 #only keep sites with at least minIndDepth from at least [value] individuals
+docounts=1 #counts the frequency of different bases (needed for dobcf)
+dobcf=1 #creates bcf file with SNPs
+dopost=2 #calculate posterior probability using uniform prior (rather than using frequency as prior in 1)
+ignoreRG=0
+dogeno=1 #write out major and minor alleles
+
+#low qual shell run: set specific shell variables
+minmapq=25 #minimum MapQ quality
+minq=25 #removes bases with a qscore of < [value] (doCounts arg)
+cd ~/angsd
+time ./angsd -GL $GL -out $workdir/variant_calling/angsd/137samps -doGlf $doGLF -doMajorMinor $doMajorMinor -doMaf $doMaf -uniqueOnly $uniqueOnly -remove_bads $removebads -only_proper_pairs $onlyproperpairs -trim $trim -C $c -baq $baq -setMaxDepth $setmaxdepth -minMapQ $minmapq -minQ $minq -minMaf $minmaf -minInd $minind -doCounts $docounts -bam $bamlist -ref $myo_ref -doBcf $dobcf -dopost $dopost --ignore-RG $ignoreRG -dogeno $dogeno 
+
+#high qual shell run: set specific shell variables
+minmapq=40 #minimum MapQ quality
+minq=40 #removes bases with a qscore of < [value] (doCounts arg)
+cd ~/angsd
+time ./angsd -GL $GL -out $workdir/variant_calling/angsd_highQ/137samps -doGlf $doGLF -doMajorMinor $doMajorMinor -doMaf $doMaf -uniqueOnly $uniqueOnly -remove_bads $removebads -only_proper_pairs $onlyproperpairs -trim $trim -C $c -baq $baq -setMaxDepth $setmaxdepth -minMapQ $minmapq -minQ $minq -minMaf $minmaf -minInd $minind -doCounts $docounts -bam $bamlist -ref $myo_ref -doBcf $dobcf -dopost $dopost --ignore-RG $ignoreRG -dogeno $dogeno -nThreads 8
+
+
+
+
+
+
+
+
+#####5. FILTERING OUT SAMPLES AND MITOCHONDRIAL DATA
+#removing the mitochrondrial data
+#from the beagle file for the low quality data
+gunzip $workdir/variant_calling/angsd/137samps.beagle.gz
+grep -v 'NC_029346.1' $workdir/variant_calling/angsd/137samps.beagle > $workdir/variant_calling/angsd/nomito_137samps.beagle
+
+#from the snp file for the high quality data 
+vcftools --bcf $workdir/variant_calling/angsd_highQ/137samps.bcf --not-chr NC_029346.1 --recode --out $workdir/variant_calling/angsd_highQ/nomito_137samps
+
+
+#samples filtered out that have high missingness, pca outliers, or were mis-identified
+
+#missingness calculated using plink
+plink --bcf $workdir/variant_calling/angsd/137samps.bcf --missing
+#get out file with the individuals to cut out (those with >50% missing data)
+mawk '$6 > 0.5' $workdir/variant_calling/angsd/plink.imiss | cut -f1 > $workdir/variant_calling/angsd/lowDP.indv
+
+#once you know which samples you want to remove, remove using this method
+#get the vcf names out so you get the same order
+head -n 200 $workdir/variant_calling/angsd_highQ/nomito_137samps.vcf > $workdir/variant_calling/angsd/names.vcf
+sed -i '138!d' $workdir/variant_calling/angsd/names.vcf #remove all of the lines before the proper start of the vcf
+
+#open in python, and find the column position for each of the samples - this should correspond to the Ind number in the beagle file
+python
+import pandas as pd
+df = pd.read_csv("$workdir/variant_calling/angsd/names.vcf", sep='\t', header='infer')
+#get the Ind number of each using this method
+df.columns.get_loc('$SAMP_NAME') 
+
+#get the first line of the beagle file so I can get the column positions
+head -n 1 $workdir/variant_calling/angsd/137samps.beagle > $workdir/variant_calling/angsd/names.beagle
+#use the same method as before to get the column positions
+python
+import pandas as pd
+df = pd.read_csv("$workdir/variant_calling/angsd/names.beagle", sep='\t', header='infer')
+#each sample has 3 columns, indX, indX.1, indX.2
+df.columns.get_loc('IndX') 
+df.columns.get_loc('IndX.1') 
+df.columns.get_loc('IndX.2')
+
+#need to ADD ONE to the column positions, as python is 0 base and cut & bash are 1 base
+cat $workdir/variant_calling/angsd/nomito_137samps.beagle | cut -f(a+1),(b+1),(c+1) --complement > Xsamps.beagle
+
+#filtering the individuals out of the vcf, using a file with each of the samples to remove
+vcftools --vcf $workdir/variant_calling/angsd_highQ/nomito_137samps.vcf --remove remove_samps.names --recode --out $workdir/variant_calling/angsd_highQ/Xsamps
+
+
+
+
+
+
+
+
+
+#####6. PAIRWISE FST
+#set working directory
+workdir=$HOME/Datafiles/Bats/Brandtii_Eu_pop
+
+#make directory for Fst
+mkdir $workdir/fst
+
+
+#make file for the russian population
+cat > $workdir/fst/russia_list
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/99-Mbr7.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/101-Mbr9.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/102-Mbr10.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/103-Mbr11.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/104-Mbr12.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/105-Mbr13.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/106-Mbr14.rmdup.bam
+
+#make file for the england population
+cat > $workdir/fst/england_list
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/10-EN41.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/12-EN46.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/13-EN48.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/14-EN51.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/15-EN53.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/16-EN58.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/17-EN59.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/19-EN82.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/1-EN5.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/3-EN14.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/4-EN16.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/7-EN27.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/8-EN37.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/9-EN40.rmdup.bam
+
+
+#make file for the german population
+cat > $workdir/fst/germany_list
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/107-24604.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/108-31102.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/109-25591.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/111-5163.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/114-25262.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/115-25279.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/117-25312.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/118-25335.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/119-AL24.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/120-AL39.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/121-AL33.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/122-AL34.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/123-AL38.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/124-AL41.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/125-AL42.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/126-AL67.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/127-AL68.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/128-AL72.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/129-AL78.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/130-AL82.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/131-AL83.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/132-AL84.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/133-AL100.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/134-AL110.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/135-AL138.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/137-AL155.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/138-AL156.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/139-AL173.rmdup.bam
+
+
+#make file for the latvian population
+cat > $workdir/fst/latvia_list
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/21-LAT11.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/22-LAT12.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/23-LAT22.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/24-LAT317.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/25-LAT374.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/26-LAT377.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/27-LAT379.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/28-LAT385.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/29-LAT386.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/30-LAT387.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/31-LAT394.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/32-LAT396.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/33-LAT400.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/34-LAT402.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/35-LAT404.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/36-LAT406.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/37-LAT407.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/38-LAT420.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/39-LAT427.rmdup.bam
+
+#make file for the swiss population
+cat > $workdir/fst/switzerland_list
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/40-S21.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/41-S22.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/42-S23.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/43-S29.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/49-S1446.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/50-S1447.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/51-S1450.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/53-S1470.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/54-SW20.rmdup.bam
+
+#make file for the finnish population
+cat > $workdir/fst/finland_list
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/55-1841.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/56-3837.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/57-3840.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/58-3841.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/59-3843.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/61-3846.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/62-3847.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/63-3848.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/64-3856.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/65-3857.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/66-3858.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/67-3859.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/68-3862.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/69-3863.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/70-3864.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/72-3869.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/73-FIN4017.rmdup.bam
+
+#make file for the polish population
+cat > $workdir/fst/poland_list
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/94-M5000.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/74-M4645.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/75-M4646.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/76-M4649.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/77-M4651.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/78-M4662.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/79-M4982.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/80-M4983.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/81-M4984.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/82-M4985.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/83-M4986.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/84-M4987.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/85-M4989.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/86-M4990.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/87-M4991.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/88-M4992.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/89-M4993.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/90-M4994.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/91-M49955.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/92-M4997.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/93-M4998.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/95-M5001.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/96-M5002.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/97-M5003.rmdup.bam
+
+#making sure that all the files are unique
+cd $workdir/fst/
+cat *list | uniq | wc -l
+
+#create the safs (shared allele frequency) for each population
+#shell variables
+workdir=$HOME/Datafiles/Bats/Brandtii_Eu_pop
+myo_ref=$HOME/Datafiles/Bats/myomyo/GCF_014108235.1_mMyoMyo1.p_genomic.fna
+GL=1 #samtools methodology used
+uniqueOnly=1 #only unique sites (not those with multiple best hits)
+removebads=1 #removes reads with a flag above 255 (failed and duplicate reads, and reads not in the primary alignment)
+onlyproperpairs=0 #use all reads, not just those properly paired
+trim=0 #dont take trim anything off
+c=50 #adjust the mapQ for excessive mismatches, suggested for bwa mapped is 50
+baq=1 #performs the BAQ computation, this is the default in SAMtools
+#setmaxdepth NOT UNDERSTOOD BY THIS ARGUMENT #discard site if total sequencing depth (all individuals added together) is over the value provided
+minmapq=25 #minimum MapQ quality
+minq=25 #removes bases with a qscore of < [value] (doCounts arg)
+#minmaf=NOT UNDERSTOOD BY THIS ARGUMENT #minimum minor allele frequency 
+#minind= CHANGE FOR EACH #only keep sites with at least minIndDepth from at least [value] individuals
+
+#write the location of the lists for all
+england=$workdir/fst/england_list
+finland=$workdir/fst/finland_list
+germany=$workdir/fst/germany_list
+latvia=$workdir/fst/latvia_list
+poland=$workdir/fst/poland_list
+russia=$workdir/fst/russia_list
+switzerland=$workdir/fst/switzerland_list
+
+#create safs for each #SET UP ON ADA10
+cd ~/angsd
+#england -14 # minInd 10 #maxdepth 2080
+./angsd -b $england  -anc $myo_ref -out $workdir/fst/england -dosaf 1 -gl $GL -ref $myo_ref -uniqueOnly $uniqueOnly -remove_bads $removebads -only_proper_pairs $onlyproperpairs -trim $trim -C $c -baq $baq -minMapQ $minmapq -minQ $minq -minInd 10
+#setmaxdepth and minmaf are unknown, so take them out
+
+#finland - 17 # minInd 12 #maxdepth 1976
+./angsd -b $finland  -anc $myo_ref -out $workdir/fst/finland -dosaf 1 -gl $GL -ref $myo_ref -uniqueOnly $uniqueOnly -remove_bads $removebads -only_proper_pairs $onlyproperpairs -trim $trim -C $c -baq $baq -minMapQ $minmapq -minQ $minq -minInd 12
+
+#germany - 28 #minInd 20 #maxdepth 3432
+./angsd -b $germany  -anc $myo_ref -out $workdir/fst/germany -dosaf 1 -gl $GL -ref $myo_ref -uniqueOnly $uniqueOnly -remove_bads $removebads -only_proper_pairs $onlyproperpairs -trim $trim -C $c -baq $baq -minMapQ $minmapq -minQ $minq -minInd 20 | tee $workdir/fst/germany.txt
+
+#latvia - 19 # minInd 13 #maxdepth 1976
+./angsd -b $latvia  -anc $myo_ref -out $workdir/fst/latvia -dosaf 1 -gl $GL -ref $myo_ref -uniqueOnly $uniqueOnly -remove_bads $removebads -only_proper_pairs $onlyproperpairs -trim $trim -C $c -baq $baq -minMapQ $minmapq -minQ $minq -minInd 13
+
+#poland -24 # mindInd 17 #maxdepth 2496
+./angsd -b $poland  -anc $myo_ref -out $workdir/fst/poland -dosaf 1 -gl $GL -ref $myo_ref -uniqueOnly $uniqueOnly -remove_bads $removebads -only_proper_pairs $onlyproperpairs -trim $trim -C $c -baq $baq -minMapQ $minmapq -minQ $minq -minInd 17
+
+#russia -7 #minInd 5 #maxdepth 728
+./angsd -b $russia  -anc $myo_ref -out $workdir/fst/russia -dosaf 1 -gl $GL -ref $myo_ref -uniqueOnly $uniqueOnly -remove_bads $removebads -only_proper_pairs $onlyproperpairs -trim $trim -C $c -baq $baq -minMapQ $minmapq -minQ $minq -minInd 5
+
+#switzerland - 9 #minInd 6 #maxdepth 1560
+./angsd -b $switzerland  -anc $myo_ref -out $workdir/fst/switzerland -dosaf 1 -gl $GL -ref $myo_ref -uniqueOnly $uniqueOnly -remove_bads $removebads -only_proper_pairs $onlyproperpairs -trim $trim -C $c -baq $baq -minMapQ $minmapq -minQ $minq -minInd 6 | tee $workdir/fst/switzerland.txt
+
+echo done
+
+
+#sites analysed and sites retained after filtering for each:
+#england 
+#1721612720
+#659357842
+#finland 
+#1755649554
+#987707429
+#germany #CHANGE
+#1836862543
+#1336815051
+#latvia
+#1761929982
+#1021694433
+#poland
+#1781235963
+#1101009448
+#russia
+#1727168758
+#1334920304
+#switzerland #CHANGE
+#1759944972
+#707080416
+
+
+#calculate the 2d sfs
+workdir=$HOME/Datafiles/Bats/Brandtii_Eu_pop
+mkdir $workdir/fst/2dsfs/
+
+cd ~/angsd
+
+./misc/realSFS $workdir/fst/england.saf.idx $workdir/fst/finland.saf.idx -P 64 >$workdir/fst/2dsfs/england.finland.ml
+./misc/realSFS $workdir/fst/england.saf.idx $workdir/fst/germany.saf.idx -P 64 >$workdir/fst/2dsfs/england.germany.ml
+./misc/realSFS $workdir/fst/england.saf.idx $workdir/fst/latvia.saf.idx -P 64 >$workdir/fst/2dsfs/england.latvia.ml
+./misc/realSFS $workdir/fst/england.saf.idx $workdir/fst/poland.saf.idx -P 64 >$workdir/fst/2dsfs/england.poland.ml
+./misc/realSFS $workdir/fst/england.saf.idx $workdir/fst/russia.saf.idx -P 64 >$workdir/fst/2dsfs/england.russia.ml
+./misc/realSFS $workdir/fst/england.saf.idx $workdir/fst/switzerland.saf.idx -P 64 >$workdir/fst/2dsfs/england.switzerland.ml
+
+./misc/realSFS $workdir/fst/finland.saf.idx $workdir/fst/germany.saf.idx -P 64 >$workdir/fst/2dsfs/finland.germany.ml
+./misc/realSFS $workdir/fst/finland.saf.idx $workdir/fst/latvia.saf.idx -P 64 >$workdir/fst/2dsfs/finland.latvia.ml
+./misc/realSFS $workdir/fst/finland.saf.idx $workdir/fst/poland.saf.idx -P 64 >$workdir/fst/2dsfs/finland.poland.ml
+./misc/realSFS $workdir/fst/finland.saf.idx $workdir/fst/russia.saf.idx -P 64 >$workdir/fst/2dsfs/finland.russia.ml
+./misc/realSFS $workdir/fst/finland.saf.idx $workdir/fst/switzerland.saf.idx -P 64 >$workdir/fst/2dsfs/finland.switzerland.ml
+
+./misc/realSFS $workdir/fst/germany.saf.idx $workdir/fst/latvia.saf.idx -P 64 >$workdir/fst/2dsfs/germany.latvia.ml
+./misc/realSFS $workdir/fst/germany.saf.idx $workdir/fst/poland.saf.idx -P 64 >$workdir/fst/2dsfs/germany.poland.ml
+./misc/realSFS $workdir/fst/germany.saf.idx $workdir/fst/russia.saf.idx -P 64 >$workdir/fst/2dsfs/germany.russia.ml
+./misc/realSFS $workdir/fst/germany.saf.idx $workdir/fst/switzerland.saf.idx -P 64 >$workdir/fst/2dsfs/germany.switzerland.ml
+
+./misc/realSFS $workdir/fst/latvia.saf.idx $workdir/fst/poland.saf.idx -P 64 >$workdir/fst/2dsfs/latvia.poland.ml
+./misc/realSFS $workdir/fst/latvia.saf.idx $workdir/fst/russia.saf.idx -P 64 >$workdir/fst/2dsfs/latvia.russia.ml
+./misc/realSFS $workdir/fst/latvia.saf.idx $workdir/fst/switzerland.saf.idx -P 64 >$workdir/fst/2dsfs/latvia.switzerland.ml
+
+./misc/realSFS $workdir/fst/poland.saf.idx $workdir/fst/russia.saf.idx -P 64 >$workdir/fst/2dsfs/poland.russia.ml
+./misc/realSFS $workdir/fst/poland.saf.idx $workdir/fst/switzerland.saf.idx -P 64 >$workdir/fst/2dsfs/poland.switzerland.ml
+
+./misc/realSFS $workdir/fst/russia.saf.idx $workdir/fst/switzerland.saf.idx -P 64 >$workdir/fst/2dsfs/russia.switzerland.ml
+
+echo 'done'
+
+
+#make directory for the pairwise fsts
+workdir=$HOME/Datafiles/Bats/Brandtii_Eu_pop
+mkdir $workdir/fst/pairwise_fst
+
+cd ~/angsd
+#first we will index the sample so that the same sites are analysed for each population
+./misc/realSFS fst index $workdir/fst/england.saf.idx $workdir/fst/finland.saf.idx -sfs $workdir/fst/2dsfs/england.finland.ml -fstout $workdir/fst/pairwise_fst/england.finland
+./misc/realSFS fst index $workdir/fst/england.saf.idx $workdir/fst/germany.saf.idx -sfs $workdir/fst/2dsfs/england.germany.ml -fstout $workdir/fst/pairwise_fst/england.germany
+./misc/realSFS fst index $workdir/fst/england.saf.idx $workdir/fst/latvia.saf.idx -sfs $workdir/fst/2dsfs/england.latvia.ml -fstout $workdir/fst/pairwise_fst/england.latvia
+./misc/realSFS fst index $workdir/fst/england.saf.idx $workdir/fst/poland.saf.idx -sfs $workdir/fst/2dsfs/england.poland.ml -fstout $workdir/fst/pairwise_fst/england.poland
+./misc/realSFS fst index $workdir/fst/england.saf.idx $workdir/fst/russia.saf.idx -sfs $workdir/fst/2dsfs/england.russia.ml -fstout $workdir/fst/pairwise_fst/england.russia
+./misc/realSFS fst index $workdir/fst/england.saf.idx $workdir/fst/switzerland.saf.idx -sfs $workdir/fst/2dsfs/england.switzerland.ml -fstout $workdir/fst/pairwise_fst/england.switzerland
+
+./misc/realSFS fst index $workdir/fst/finland.saf.idx $workdir/fst/germany.saf.idx -sfs $workdir/fst/2dsfs/finland.germany.ml -fstout $workdir/fst/pairwise_fst/finland.germany
+./misc/realSFS fst index $workdir/fst/finland.saf.idx $workdir/fst/latvia.saf.idx -sfs $workdir/fst/2dsfs/finland.latvia.ml -fstout $workdir/fst/pairwise_fst/finland.latvia
+./misc/realSFS fst index $workdir/fst/finland.saf.idx $workdir/fst/poland.saf.idx -sfs $workdir/fst/2dsfs/finland.poland.ml -fstout $workdir/fst/pairwise_fst/finland.poland
+./misc/realSFS fst index $workdir/fst/finland.saf.idx $workdir/fst/russia.saf.idx -sfs $workdir/fst/2dsfs/finland.russia.ml -fstout $workdir/fst/pairwise_fst/finland.russia
+./misc/realSFS fst index $workdir/fst/finland.saf.idx $workdir/fst/switzerland.saf.idx -sfs $workdir/fst/2dsfs/finland.switzerland.ml -fstout $workdir/fst/pairwise_fst/finland.switzerland
+
+./misc/realSFS fst index $workdir/fst/germany.saf.idx $workdir/fst/latvia.saf.idx -sfs $workdir/fst/2dsfs/germany.latvia.ml -fstout $workdir/fst/pairwise_fst/germany.latvia
+./misc/realSFS fst index $workdir/fst/germany.saf.idx $workdir/fst/poland.saf.idx -sfs $workdir/fst/2dsfs/germany.poland.ml -fstout $workdir/fst/pairwise_fst/germany.poland
+./misc/realSFS fst index $workdir/fst/germany.saf.idx $workdir/fst/russia.saf.idx -sfs $workdir/fst/2dsfs/germany.russia.ml -fstout $workdir/fst/pairwise_fst/germany.russia
+./misc/realSFS fst index $workdir/fst/germany.saf.idx $workdir/fst/switzerland.saf.idx -sfs $workdir/fst/2dsfs/germany.switzerland.ml -fstout $workdir/fst/pairwise_fst/germany.switzerland
+
+./misc/realSFS fst index $workdir/fst/latvia.saf.idx $workdir/fst/poland.saf.idx -sfs $workdir/fst/2dsfs/latvia.poland.ml -fstout $workdir/fst/pairwise_fst/latvia.poland
+./misc/realSFS fst index $workdir/fst/latvia.saf.idx $workdir/fst/russia.saf.idx -sfs $workdir/fst/2dsfs/latvia.russia.ml -fstout $workdir/fst/pairwise_fst/latvia.russia
+./misc/realSFS fst index $workdir/fst/latvia.saf.idx $workdir/fst/switzerland.saf.idx -sfs $workdir/fst/2dsfs/latvia.switzerland.ml -fstout $workdir/fst/pairwise_fst/latvia.switzerland
+
+./misc/realSFS fst index $workdir/fst/poland.saf.idx $workdir/fst/russia.saf.idx -sfs $workdir/fst/2dsfs/poland.russia.ml -fstout $workdir/fst/pairwise_fst/poland.russia
+./misc/realSFS fst index $workdir/fst/poland.saf.idx $workdir/fst/switzerland.saf.idx -sfs $workdir/fst/2dsfs/poland.switzerland.ml -fstout $workdir/fst/pairwise_fst/poland.switzerland
+
+./misc/realSFS fst index $workdir/fst/russia.saf.idx $workdir/fst/switzerland.saf.idx -sfs $workdir/fst/2dsfs/russia.switzerland.ml -fstout $workdir/fst/pairwise_fst/russia.switzerland
+
+#get the global estimate for each
+#make a list for the stats
+cd $workdir/fst/pairwise_fst
+ls *.fst.idx > pairwise.list
+sed -i 's/.fst.idx//g' pairwise.list
+pairwise_list=$workdir/fst/pairwise_fst/pairwise.list
+
+cd ~/angsd
+while read pair; do
+	./misc/realSFS fst stats $workdir/fst/pairwise_fst/${pair}.fst.idx -P 64 > $workdir/fst/pairwise_fst/${pair}.stats;
+done < $pairwise_list
+
+
+
+
+
+
+
+
+
+
+
+
+
+#####7. SLIDING WINDOW FST
+Gst sliding window, comparing my two binary groupings (myomyo range overlap and wnd low/high)
+
+#set working directory
+workdir=$HOME/Datafiles/Bats/Brandtii_Eu_pop
+
+#make directory for Fst
+mkdir -p $workdir/fst/myomyo_fst
+mkdir -p $workdir/fst/wnd_fst
+
+#lets start with myomyo range overlap
+#myomyo overlaps with germany, poland and switzerland
+#does not overlap with england, finland, latvia or russia
+
+#make lists for each of my coerced categories
+cat > $workdir/fst/myomyo_fst/no_myomyo_list
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/99-Mbr7.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/101-Mbr9.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/102-Mbr10.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/103-Mbr11.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/104-Mbr12.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/105-Mbr13.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/106-Mbr14.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/10-EN41.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/12-EN46.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/13-EN48.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/14-EN51.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/15-EN53.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/16-EN58.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/17-EN59.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/19-EN82.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/1-EN5.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/3-EN14.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/4-EN16.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/7-EN27.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/8-EN37.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/9-EN40.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/21-LAT11.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/22-LAT12.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/23-LAT22.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/24-LAT317.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/25-LAT374.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/26-LAT377.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/27-LAT379.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/28-LAT385.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/29-LAT386.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/30-LAT387.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/31-LAT394.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/32-LAT396.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/33-LAT400.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/34-LAT402.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/35-LAT404.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/36-LAT406.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/37-LAT407.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/38-LAT420.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/39-LAT427.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/55-1841.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/56-3837.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/57-3840.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/58-3841.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/59-3843.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/61-3846.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/62-3847.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/63-3848.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/64-3856.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/65-3857.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/66-3858.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/67-3859.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/68-3862.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/69-3863.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/70-3864.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/72-3869.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/73-FIN4017.rmdup.bam
+
+
+#make file for the myomyo overlap
+cat > $workdir/fst/myomyo_fst/myomyo_list
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/107-24604.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/108-31102.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/109-25591.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/111-5163.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/114-25262.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/115-25279.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/117-25312.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/118-25335.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/119-AL24.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/120-AL39.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/121-AL33.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/122-AL34.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/123-AL38.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/124-AL41.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/125-AL42.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/126-AL67.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/127-AL68.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/128-AL72.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/129-AL78.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/130-AL82.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/131-AL83.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/132-AL84.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/133-AL100.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/134-AL110.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/135-AL138.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/137-AL155.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/138-AL156.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/139-AL173.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/40-S21.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/41-S22.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/42-S23.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/43-S29.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/49-S1446.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/50-S1447.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/51-S1450.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/53-S1470.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/54-SW20.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/94-M5000.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/74-M4645.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/75-M4646.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/76-M4649.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/77-M4651.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/78-M4662.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/79-M4982.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/80-M4983.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/81-M4984.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/82-M4985.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/83-M4986.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/84-M4987.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/85-M4989.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/86-M4990.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/87-M4991.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/88-M4992.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/89-M4993.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/90-M4994.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/91-M49955.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/92-M4997.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/93-M4998.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/95-M5001.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/96-M5002.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/97-M5003.rmdup.bam
+
+#making sure that all the files are unique
+cd $workdir/fst/myomyo_fst
+cat *list | uniq | wc -l
+
+#create the safs (shared allele frequency) for each population
+#shell variables
+workdir=$HOME/Datafiles/Bats/Brandtii_Eu_pop
+myo_ref=$HOME/Datafiles/Bats/myomyo/GCF_014108235.1_mMyoMyo1.p_genomic.fna
+GL=1 #samtools methodology used
+uniqueOnly=1 #only unique sites (not those with multiple best hits)
+removebads=1 #removes reads with a flag above 255 (failed and duplicate reads, and reads not in the primary alignment)
+onlyproperpairs=0 #use all reads, not just those properly paired
+trim=0 #dont take trim anything off
+c=50 #adjust the mapQ for excessive mismatches, suggested for bwa mapped is 50
+baq=1 #performs the BAQ computation, this is the default in SAMtools
+minmapq=25 #minimum MapQ quality
+minq=25 #removes bases with a qscore of < [value] (doCounts arg)
+#minind= CHANGE FOR EACH #only keep sites with at least minIndDepth from at least [value] individuals
+
+#write the location of the lists for all
+no_myomyo=$workdir/fst/myomyo_fst/no_myomyo_list
+myomyo=$workdir/fst/myomyo_fst/myomyo_list
+
+#create safs for each #SET UP ON ADA10
+cd ~/angsd
+#no_myomyo -57 # minInd 40 
+./angsd -b $no_myomyo  -anc $myo_ref -out $workdir/fst/myomyo_fst/no_myomyo -dosaf 1 -gl $GL -ref $myo_ref -uniqueOnly $uniqueOnly -remove_bads $removebads -only_proper_pairs $onlyproperpairs -trim $trim -C $c -baq $baq -minMapQ $minmapq -minQ $minq -minInd 40
+
+cd ~/angsd
+#myomyo - 61 # minInd 43 
+./angsd -b $myomyo  -anc $myo_ref -out $workdir/fst/myomyo_fst/myomyo -dosaf 1 -gl $GL -ref $myo_ref -uniqueOnly $uniqueOnly -remove_bads $removebads -only_proper_pairs $onlyproperpairs -trim $trim -C $c -baq $baq -minMapQ $minmapq -minQ $minq -minInd 43
+#
+
+
+#calculate the pairwise stats, which should be nice and quick as there's only two
+workdir=$HOME/Datafiles/Bats/Brandtii_Eu_pop
+mkdir -p $workdir/fst/myomyo_fst/2dsfs
+
+cd ~/angsd
+./misc/realSFS $workdir/fst/myomyo_fst/myomyo.saf.idx $workdir/fst/myomyo_fst/no_myomyo.saf.idx -P 64 >$workdir/fst/myomyo_fst/2dsfs/myomyo_contrast.ml
+
+
+#create the index for the contrast
+#prepare the fst for easy window analysis etc
+cd ~/angsd
+./misc/realSFS fst index $workdir/fst/myomyo_fst/myomyo.saf.idx $workdir/fst/myomyo_fst/no_myomyo.saf.idx -sfs $workdir/fst/myomyo_fst/2dsfs/myomyo_contrast.ml -fstout $workdir/fst/myomyo_fst/myomyo_contrast
+
+#get the global estimate
+./misc/realSFS fst stats $workdir/fst/myomyo_fst/myomyo_contrast.fst.idx 
+#####FST.Unweight[nObs:922063249]:0.005726 Fst.Weight:0.008626
+#below is not tested that much, but seems to work
+./misc/realSFS fst stats2 $workdir/fst/myomyo_fst/myomyo_contrast.fst.idx -win 10000 -step 2000 > $workdir/fst/myomyo_fst/slidingwindow_myomyo_10kbW_2kbS
+
+
+
+#####looking at the windows with > 0.1 fst
+workdir=$HOME/Datafiles/Bats/Brandtii_Eu_pop
+mkdir -p $workdir/fst/myomyo_fst/high0.1
+
+vcftools --vcf $workdir/variant_calling/angsd/LD/118samps_noLD.recode.vcf --chr NW_023416335.1 --from-bp 62896000 --to-bp 62906000 --recode --out $workdir/fst/myomyo_fst/high0.1/NW_023416335.1.62896000.st.vcf
+vcftools --vcf $workdir/variant_calling/angsd/LD/118samps_noLD.recode.vcf --chr NW_023416335.1 --from-bp 91186000 --to-bp 91196000 --recode --out $workdir/fst/myomyo_fst/high0.1/NW_023416335.1.91186000.st.vcf
+vcftools --vcf $workdir/variant_calling/angsd/LD/118samps_noLD.recode.vcf --chr NW_023416346.1 --from-bp 8906000 --to-bp 8916000 --recode --out $workdir/fst/myomyo_fst/high0.1/NW_023416346.1.8906000.st.vcf
+vcftools --vcf $workdir/variant_calling/angsd/LD/118samps_noLD.recode.vcf --chr NW_023416346.1 --from-bp 8908000 --to-bp 8918000 --recode --out $workdir/fst/myomyo_fst/high0.1/NW_023416346.1.8908000.st.vcf
+vcftools --vcf $workdir/variant_calling/angsd/LD/118samps_noLD.recode.vcf --chr NW_023416346.1 --from-bp 8910000 --to-bp 8920000 --recode --out $workdir/fst/myomyo_fst/high0.1/NW_023416346.1.8910000.st.vcf
+
+vcftools --vcf $workdir/variant_calling/angsd/LD/118samps_noLD.recode.vcf --chr NW_023416346.1 --from-bp 8912000 --to-bp 8922000 --recode --out $workdir/fst/myomyo_fst/high0.1/NW_023416346.1.8912000.st.vcf
+vcftools --vcf $workdir/variant_calling/angsd/LD/118samps_noLD.recode.vcf --chr NW_023416346.1 --from-bp 37342000 --to-bp 37352000 --recode --out $workdir/fst/myomyo_fst/high0.1/NW_023416346.1.37342000.st.vcf
+vcftools --vcf $workdir/variant_calling/angsd/LD/118samps_noLD.recode.vcf --chr NW_023416346.1 --from-bp 37344000 --to-bp 37354000 --recode --out $workdir/fst/myomyo_fst/high0.1/NW_023416346.1.37344000.st.vcf
+vcftools --vcf $workdir/variant_calling/angsd/LD/118samps_noLD.recode.vcf --chr NW_023416346.1 --from-bp 37346000 --to-bp 37356000 --recode --out $workdir/fst/myomyo_fst/high0.1/NW_023416346.1.37346000.st.vcf
+vcftools --vcf $workdir/variant_calling/angsd/LD/118samps_noLD.recode.vcf --chr NW_023416346.1 --from-bp 101284000 --to-bp 101294000 --recode --out $workdir/fst/myomyo_fst/high0.1/NW_023416346.1.101284000.st.vcf
+
+vcftools --vcf $workdir/variant_calling/angsd/LD/118samps_noLD.recode.vcf --chr NW_023416346.1 --from-bp 101286000 --to-bp 101296000 --recode --out $workdir/fst/myomyo_fst/high0.1/NW_023416346.1.101286000.st.vcf
+vcftools --vcf $workdir/variant_calling/angsd/LD/118samps_noLD.recode.vcf --chr NW_023416346.1 --from-bp 101288000 --to-bp 101298000 --recode --out $workdir/fst/myomyo_fst/high0.1/NW_023416346.1.101288000.st.vcf
+vcftools --vcf $workdir/variant_calling/angsd/LD/118samps_noLD.recode.vcf --chr NW_023416346.1 --from-bp 101290000 --to-bp 101300000 --recode --out $workdir/fst/myomyo_fst/high0.1/NW_023416346.1.101290000.st.vcf
+vcftools --vcf $workdir/variant_calling/angsd/LD/118samps_noLD.recode.vcf --chr NW_023416346.1 --from-bp 101292000 --to-bp 101302000 --recode --out $workdir/fst/myomyo_fst/high0.1/NW_023416346.1.101292000.st.vcf
+vcftools --vcf $workdir/variant_calling/angsd/LD/118samps_noLD.recode.vcf --chr NW_023416357.1 --from-bp 32598000 --to-bp 32608000 --recode --out $workdir/fst/myomyo_fst/high0.1/NW_023416357.1.32598000.st.vcf
+
+
+grep 'NW_023416335' ~/Datafiles/Bats/myomyo/GCF_014108235.1_mMyoMyo1.p_genomic.gff | grep 'CDS' > $workdir/fst/myomyo_fst/high0.1/NW_023416335_myomyo_CDS.gff
+grep 'NW_023416335' ~/Datafiles/Bats/myomyo/GCF_014108235.1_mMyoMyo1.p_genomic.gff | grep 'gene' | wc -l #149697 genes
+
+grep 'NW_023416346' ~/Datafiles/Bats/myomyo/GCF_014108235.1_mMyoMyo1.p_genomic.gff | grep 'CDS' > $workdir/fst/myomyo_fst/high0.1/NW_023416346_myomyo_CDS.gff
+grep 'NW_023416346' ~/Datafiles/Bats/myomyo/GCF_014108235.1_mMyoMyo1.p_genomic.gff | grep 'gene' | wc -l #55192 genes
+
+grep 'NW_023416357' ~/Datafiles/Bats/myomyo/GCF_014108235.1_mMyoMyo1.p_genomic.gff | grep 'CDS' > $workdir/fst/myomyo_fst/high0.1/NW_023416357_myomyo_CDS.gff
+grep 'NW_023416357' ~/Datafiles/Bats/myomyo/GCF_014108235.1_mMyoMyo1.p_genomic.gff | grep 'gene' | wc -l #88751 genes
+
+
+#############################################################################################
+#now wnd binary (none/very low to prevalent)
+#myomyo overlaps with germany, latvia, poland and switzerland
+#wnd absent/lown in england, finland and russia
+
+#make lists for each of my coerced categories
+#wnd
+cat > $workdir/fst/wnd_fst/wnd_list
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/107-24604.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/108-31102.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/109-25591.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/111-5163.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/114-25262.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/115-25279.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/117-25312.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/118-25335.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/119-AL24.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/120-AL39.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/121-AL33.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/122-AL34.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/123-AL38.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/124-AL41.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/125-AL42.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/126-AL67.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/127-AL68.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/128-AL72.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/129-AL78.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/130-AL82.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/131-AL83.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/132-AL84.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/133-AL100.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/134-AL110.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/135-AL138.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/137-AL155.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/138-AL156.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/139-AL173.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/21-LAT11.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/22-LAT12.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/23-LAT22.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/24-LAT317.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/25-LAT374.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/26-LAT377.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/27-LAT379.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/28-LAT385.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/29-LAT386.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/30-LAT387.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/31-LAT394.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/32-LAT396.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/33-LAT400.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/34-LAT402.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/35-LAT404.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/36-LAT406.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/37-LAT407.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/38-LAT420.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/39-LAT427.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/40-S21.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/41-S22.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/42-S23.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/43-S29.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/49-S1446.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/50-S1447.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/51-S1450.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/53-S1470.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/54-SW20.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/94-M5000.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/74-M4645.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/75-M4646.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/76-M4649.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/77-M4651.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/78-M4662.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/79-M4982.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/80-M4983.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/81-M4984.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/82-M4985.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/83-M4986.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/84-M4987.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/85-M4989.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/86-M4990.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/87-M4991.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/88-M4992.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/89-M4993.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/90-M4994.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/91-M49955.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/92-M4997.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/93-M4998.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/95-M5001.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/96-M5002.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/97-M5003.rmdup.bam
+
+#no_wnd
+cat > $workdir/fst/wnd_fst/no_wnd_list
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/99-Mbr7.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/101-Mbr9.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/102-Mbr10.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/103-Mbr11.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/104-Mbr12.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/105-Mbr13.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/106-Mbr14.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/10-EN41.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/12-EN46.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/13-EN48.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/14-EN51.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/15-EN53.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/16-EN58.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/17-EN59.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/19-EN82.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/1-EN5.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/3-EN14.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/4-EN16.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/7-EN27.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/8-EN37.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/9-EN40.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/55-1841.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/56-3837.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/57-3840.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/58-3841.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/59-3843.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/61-3846.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/62-3847.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/63-3848.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/64-3856.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/65-3857.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/66-3858.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/67-3859.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/68-3862.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/69-3863.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/70-3864.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/72-3869.rmdup.bam
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/mapping_collapsed/map_to_myomyo/bams/73-FIN4017.rmdup.bam
+
+#making sure that all the files are unique
+cd $workdir/fst/wnd_fst
+cat *list | uniq | wc -l
+
+#create the safs (shared allele frequency) for each population
+#shell variables
+workdir=$HOME/Datafiles/Bats/Brandtii_Eu_pop
+myo_ref=$HOME/Datafiles/Bats/myomyo/GCF_014108235.1_mMyoMyo1.p_genomic.fna
+GL=1 #samtools methodology used
+uniqueOnly=1 #only unique sites (not those with multiple best hits)
+removebads=1 #removes reads with a flag above 255 (failed and duplicate reads, and reads not in the primary alignment)
+onlyproperpairs=0 #use all reads, not just those properly paired
+trim=0 #dont take trim anything off
+c=50 #adjust the mapQ for excessive mismatches, suggested for bwa mapped is 50
+baq=1 #performs the BAQ computation, this is the default in SAMtools
+minmapq=25 #minimum MapQ quality
+minq=25 #removes bases with a qscore of < [value] (doCounts arg)
+#minind= CHANGE FOR EACH #only keep sites with at least minIndDepth from at least [value] individuals
+
+#write the location of the lists for all
+wnd=$workdir/fst/wnd_fst/wnd_list
+no_wnd=$workdir/fst/wnd_fst/no_wnd_list
+
+#create safs for each #SET UP ON ADA10
+cd ~/angsd
+#wnd -80 # minInd 56 
+./angsd -b $wnd  -anc $myo_ref -out $workdir/fst/wnd_fst/wnd -dosaf 1 -gl $GL -ref $myo_ref -uniqueOnly $uniqueOnly -remove_bads $removebads -only_proper_pairs $onlyproperpairs -trim $trim -C $c -baq $baq -minMapQ $minmapq -minQ $minq -minInd 56
+#
+
+cd ~/angsd
+#myomyo - 38 # minInd 27 
+./angsd -b $no_wnd  -anc $myo_ref -out $workdir/fst/wnd_fst/no_wnd -dosaf 1 -gl $GL -ref $myo_ref -uniqueOnly $uniqueOnly -remove_bads $removebads -only_proper_pairs $onlyproperpairs -trim $trim -C $c -baq $baq -minMapQ $minmapq -minQ $minq -minInd 27
+#
+
+#calculate the pairwise stats, which should be nice and quick as there's only two
+workdir=$HOME/Datafiles/Bats/Brandtii_Eu_pop
+mkdir -p $workdir/fst/wnd_fst/2dsfs
+
+cd ~/angsd
+./misc/realSFS $workdir/fst/wnd_fst/wnd.saf.idx $workdir/fst/wnd_fst/no_wnd.saf.idx -P 64 >$workdir/fst/wnd_fst/2dsfs/wnd_contrast.ml
+
+#create the index for the contrast
+#prepare the fst for easy window analysis etc
+cd ~/angsd
+./misc/realSFS fst index $workdir/fst/wnd_fst/wnd.saf.idx $workdir/fst/wnd_fst/no_wnd.saf.idx -sfs $workdir/fst/wnd_fst/2dsfs/wnd_contrast.ml -fstout $workdir/fst/wnd_fst/wnd_contrast
+
+#get the global estimate
+./misc/realSFS fst stats $workdir/fst/wnd_fst/wnd_contrast.fst.idx 
+#####FST.Unweight[nObs:890835405]:0.005587 Fst.Weight:0.007118
+#below is not tested that much, but seems to work
+./misc/realSFS fst stats2 $workdir/fst/wnd_fst/wnd_contrast.fst.idx -win 10000 -step 2000 > $workdir/fst/wnd_fst/slidingwindow_wnd_10kbW_2kbS
+
+
+############
+#####looking at the windows with > 0.1 fst
+workdir=$HOME/Datafiles/Bats/Brandtii_Eu_pop
+mkdir -p $workdir/fst/wnd_fst/high0.1
+
+vcftools --vcf $workdir/variant_calling/angsd/LD/118samps_noLD.recode.vcf --chr NW_023416324.1 --from-bp 103388000 --to-bp 103398000 --recode --out $workdir/fst/wnd_fst/high0.1/NW_023416324.1.103388000.st.vcf
+vcftools --vcf $workdir/variant_calling/angsd/LD/118samps_noLD.recode.vcf --chr NW_023416335.1 --from-bp 65258000 --to-bp 65268000 --recode --out $workdir/fst/wnd_fst/high0.1/NW_023416335.1.65258000.st.vcf
+vcftools --vcf $workdir/variant_calling/angsd/LD/118samps_noLD.recode.vcf --chr NW_023416335.1 --from-bp 187636000 --to-bp 187646000 --recode --out $workdir/fst/wnd_fst/high0.1/NW_023416335.1.187636000.st.vcf
+vcftools --vcf $workdir/variant_calling/angsd/LD/118samps_noLD.recode.vcf --chr NW_023416335.1 --from-bp 187638000 --to-bp 187648000 --recode --out $workdir/fst/wnd_fst/high0.1/NW_023416335.1.187638000.st.vcf
+vcftools --vcf $workdir/variant_calling/angsd/LD/118samps_noLD.recode.vcf --chr NW_023416335.1 --from-bp 187640000 --to-bp 187650000 --recode --out $workdir/fst/wnd_fst/high0.1/NW_023416335.1.187640000.st.vcf
+
+vcftools --vcf $workdir/variant_calling/angsd/LD/118samps_noLD.recode.vcf --chr NW_023416335.1 --from-bp 187642000 --to-bp 187652000 --recode --out $workdir/fst/wnd_fst/high0.1/NW_023416335.1.187642000.st.vcf
+vcftools --vcf $workdir/variant_calling/angsd/LD/118samps_noLD.recode.vcf --chr NW_023416335.1 --from-bp 187644000 --to-bp 187654000 --recode --out $workdir/fst/wnd_fst/high0.1/NW_023416335.1.187644000.st.vcf
+vcftools --vcf $workdir/variant_calling/angsd/LD/118samps_noLD.recode.vcf --chr NW_023416346.1 --from-bp 7204000 --to-bp 7214000 --recode --out $workdir/fst/wnd_fst/high0.1/NW_023416346.1.7204000.st.vcf
+vcftools --vcf $workdir/variant_calling/angsd/LD/118samps_noLD.recode.vcf --chr NW_023416346.1 --from-bp 7206000 --to-bp 7216000 --recode --out $workdir/fst/wnd_fst/high0.1/NW_023416346.1.7206000.st.vcf
+vcftools --vcf $workdir/variant_calling/angsd/LD/118samps_noLD.recode.vcf --chr NW_023416346.1 --from-bp 7208000 --to-bp 7218000 --recode --out $workdir/fst/wnd_fst/high0.1/NW_023416346.1.7208000.st.vcf
+
+vcftools --vcf $workdir/variant_calling/angsd/LD/118samps_noLD.recode.vcf --chr NW_023416346.1 --from-bp 7210000 --to-bp 7220000 --recode --out $workdir/fst/wnd_fst/high0.1/NW_023416346.1.7210000.st.vcf
+vcftools --vcf $workdir/variant_calling/angsd/LD/118samps_noLD.recode.vcf --chr NW_023416346.1 --from-bp 7212000 --to-bp 7222000 --recode --out $workdir/fst/wnd_fst/high0.1/NW_023416346.1.7212000.st.vcf
+vcftools --vcf $workdir/variant_calling/angsd/LD/118samps_noLD.recode.vcf --chr NW_023416346.1 --from-bp 8822000 --to-bp 8832000 --recode --out $workdir/fst/wnd_fst/high0.1/NW_023416346.1.8822000.st.vcf
+vcftools --vcf $workdir/variant_calling/angsd/LD/118samps_noLD.recode.vcf --chr NW_023416346.1 --from-bp 8824000 --to-bp 8834000 --recode --out $workdir/fst/wnd_fst/high0.1/NW_023416346.1.8824000.st.vcf
+vcftools --vcf $workdir/variant_calling/angsd/LD/118samps_noLD.recode.vcf --chr NW_023416346.1 --from-bp 8912000 --to-bp 8922000 --recode --out $workdir/fst/wnd_fst/high0.1/NW_023416346.1.8912000.st.vcf
+
+vcftools --vcf $workdir/variant_calling/angsd/LD/118samps_noLD.recode.vcf --chr NW_023416346.1 --from-bp 36748000 --to-bp 36758000 --recode --out $workdir/fst/wnd_fst/high0.1/NW_023416346.1.36748000.st.vcf
+vcftools --vcf $workdir/variant_calling/angsd/LD/118samps_noLD.recode.vcf --chr NW_023416346.1 --from-bp 36750000 --to-bp 36760000 --recode --out $workdir/fst/wnd_fst/high0.1/NW_023416346.1.36750000.st.vcf
+vcftools --vcf $workdir/variant_calling/angsd/LD/118samps_noLD.recode.vcf --chr NW_023416346.1 --from-bp 101292000 --to-bp 101302000 --recode --out $workdir/fst/wnd_fst/high0.1/NW_023416346.1.101292000.st.vcf
+vcftools --vcf $workdir/variant_calling/angsd/LD/118samps_noLD.recode.vcf --chr NW_023416379.1 --from-bp 10202000 --to-bp 10212000 --recode --out $workdir/fst/wnd_fst/high0.1/NW_023416379.1.10202000.st.vcf
+
+grep 'NW_023416324' ~/Datafiles/Bats/myomyo/GCF_014108235.1_mMyoMyo1.p_genomic.gff | grep 'CDS' > $workdir/fst/wnd_fst/high0.1/NW_023416324_myomyo_CDS.gff
+grep 'NW_023416324' ~/Datafiles/Bats/myomyo/GCF_014108235.1_mMyoMyo1.p_genomic.gff | grep 'gene' | wc -l #164947 genes
+
+grep 'NW_023416335' ~/Datafiles/Bats/myomyo/GCF_014108235.1_mMyoMyo1.p_genomic.gff | grep 'CDS' > $workdir/fst/wnd_fst/high0.1/NW_023416335_myomyo_CDS.gff
+grep 'NW_023416335' ~/Datafiles/Bats/myomyo/GCF_014108235.1_mMyoMyo1.p_genomic.gff | grep 'gene' | wc -l #149697 genes
+
+grep 'NW_023416346' ~/Datafiles/Bats/myomyo/GCF_014108235.1_mMyoMyo1.p_genomic.gff | grep 'CDS' > $workdir/fst/wnd_fst/high0.1/NW_023416346_myomyo_CDS.gff
+grep 'NW_023416346' ~/Datafiles/Bats/myomyo/GCF_014108235.1_mMyoMyo1.p_genomic.gff | grep 'gene' | wc -l #55192 genes
+
+grep 'NW_023416379' ~/Datafiles/Bats/myomyo/GCF_014108235.1_mMyoMyo1.p_genomic.gff | grep 'CDS' > $workdir/fst/wnd_fst/high0.1/NW_023416379_myomyo_CDS.gff
+grep 'NW_023416379' ~/Datafiles/Bats/myomyo/GCF_014108235.1_mMyoMyo1.p_genomic.gff | grep 'gene' | wc -l #75775 genes
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+####8. FINDING AND FILTERING OUT LINKED SITES
+#6 linkage disequilibrium neat file, workflow taken from https://github.com/fgvieira/ngsLD
+workdir=$HOME/Datafiles/Bats/Brandtii_Eu_pop
+#move into the right directory
+cd $workdir/variant_calling/angsd
+#need to create a positions file for this to run
+#it says it wants chrom in the first column, and bp position in the second column, but these are together in the beagle file - need to separate these
+cut -f1 118samps.beagle > positions.tsv
+#remove the header line
+sed -i '1d' positions.tsv
+#split the position column into two 
+sed -i 's#_#\t#2' positions.tsv
+
+#need to cut off the header and cut off the first three columns
+cut -f 4- 118samps.beagle > no_info_118samps.beagle
+#remove the header line
+sed -i '1d' no_info_118samps.beagle
+#zip this again
+gzip no_info_118samps.beagle
+
+#make directory for LD
+mkdir -p $workdir/variant_calling/angsd/LD
+cd ~/ngsLD
+#run LD calling with number of sites (can be found from length -1 of beagle file)
+./ngsLD --geno $workdir/variant_calling/angsd/no_info_118samps.beagle.gz --probs true log_scale false --n_ind 118 --n_sites 4641547 --pos $workdir/variant_calling/angsd/positions.tsv --max_kb_dist 100 --n_threads 64 --out $workdir/variant_calling/angsd/LD/118samps.beagle.ld
+#setting max_dist of 100kb
+
+#want to get the LD decay curve, to determine when my max distance cutoff should be
+#need to be in the r_env of gauss, for which I have installed the necessary R packages: optparse, ggplot2, reshape2, plyr (tools is in base)
+workdir=$HOME/Datafiles/Bats/Brandtii_Eu_pop
+#make file for the ld file list
+cat > $workdir/variant_calling/angsd/LD/ld_files.list
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/variant_calling/angsd/LD/118samps.beagle.ld
+
+
+#need to be in an R env, for which I have installed the necessary R packages: optparse, ggplot2, reshape2, plyr (tools is in base) #can create a subset to look at this faster, this takes a 2-3 hrs to run, 1 000 000 sites creates similar curves
+conda activate r_env
+cd ~/ngsLD
+Rscript --vanilla --slave scripts/fit_LDdecay.R --fit_level 100 --ld_files $workdir/variant_calling/angsd/LD/ld_files.list --out $workdir/variant_calling/angsd/LD/118_LDdecay_100plot.pdf 
+
+#need to then prune the graph to get only the unlinked sites https://github.com/fgvieira/prune_graph
+cd ~/prune_graph/target/release
+#based on the decay graph, I'm going to set the distance for pruning at within 25bk, and the r^2 of >=0.5
+./prune_graph --in $workdir/variant_calling/angsd/LD/118samps.beagle.ld --weight-field column_7 --weight-filter "column_3 <= 25000 && column_7 >= 0.5" --out $workdir/variant_calling/angsd/LD/118samps_LD_unlinked.pos
+#this retains 3 073 044 (down from 4 641 548)
+
+
+#filtering out the linked positions
+#change the positions file, need to swap the colon to an underscore
+cd $workdir/variant_calling/angsd/LD
+cp 118samps_LD_unlinked.pos edit_118samps_LD_unlinked.pos
+sed -i 's#:#_#g' edit_118samps_LD_unlinked.pos
+
+python
+import pandas as pd
+df = pd.read_csv("../118samps.beagle", sep='\t', index_col=0, header='infer')
+filter = pd.read_csv("edit_118samps_LD_unlinked.pos", index_col=0, header=None)
+df2 = pd.merge(df, filter, left_index=True, right_index=True)
+df2.to_csv("118samps_noLD.beagle", index=True, header=True, sep='\t', index_label='marker') #need to save out as a tsv, and label the index properly, bc python gets rid of the index name by default
+quit()
+
+
+
+###############
+#run the linkage disequilibrium on the high quality snp call
+workdir=$HOME/Datafiles/Bats/Brandtii_Eu_pop
+#move into the right directory
+cd $workdir/variant_calling/angsd_highQ
+#need to create a positions file for this to run
+#it says it wants chrom in the first column, and bp position in the second column, but these are together in the beagle file - need to separate these
+cut -f1 118samps.beagle > positions.tsv
+#remove the header line
+sed -i '1d' positions.tsv
+#split the position column into two 
+sed -i 's#_#\t#2' positions.tsv
+
+#need to cut off the header and cut off the first three columns
+cut -f 4- 118samps.beagle > no_info_118samps.beagle
+#remove the header line
+sed -i '1d' no_info_118samps.beagle
+#zip this again
+gzip no_info_118samps.beagle
+
+#make directory for LD
+mkdir -p $workdir/variant_calling/angsd_highQ/LD
+cd ~/ngsLD
+#run LD calling with number of sites (can be found from length -1 of beagle file)
+./ngsLD --geno $workdir/variant_calling/angsd_highQ/no_info_118samps.beagle.gz --probs true log_scale false --n_ind 118 --n_sites 1056910 --pos $workdir/variant_calling/angsd_highQ/positions.tsv --max_kb_dist 100 --n_threads 64 --out $workdir/variant_calling/angsd_highQ/LD/118samps.beagle.ld
+#setting max_dist of 100kb
+
+#want to get the LD decay curve, to determine when my max distance cutoff should be
+#need to be in the r_env of gauss, for which I have installed the necessary R packages: optparse, ggplot2, reshape2, plyr (tools is in base)
+workdir=$HOME/Datafiles/Bats/Brandtii_Eu_pop
+#make file for the ld file list
+cat > $workdir/variant_calling/angsd_highQ/LD/ld_files.list
+/pub59/florawf/Datafiles/Bats/Brandtii_Eu_pop/variant_calling/angsd_highQ/LD/118samps.beagle.ld
+
+
+#need to be in an R env, for which I have installed the necessary R packages: optparse, ggplot2, reshape2, plyr (tools is in base) #can create a subset to look at this faster, this takes a 2-3 hrs to run, 1 000 000 sites creates similar curves
+conda activate r_env
+cd ~/ngsLD
+Rscript --vanilla --slave scripts/fit_LDdecay.R --fit_level 100 --ld_files $workdir/variant_calling/angsd_highQ/LD/ld_files.list --out $workdir/variant_calling/angsd_highQ/LD/118_LDdecay_100plot.pdf 
+
+#need to then prune the graph to get only the unlinked sites https://github.com/fgvieira/prune_graph
+cd ~/prune_graph/target/release
+#based on the decay graph, I'm going to set the distance for pruning at within 25bk, and the r^2 of >=0.5
+./prune_graph --in $workdir/variant_calling/angsd_highQ/LD/118samps.beagle.ld --weight-field column_7 --weight-filter "column_3 <= 25000 && column_7 >= 0.5" --out $workdir/variant_calling/angsd_highQ/LD/118samps_LD_unlinked.pos
+#this retains 860 887 (down from  1 056 910)
+
+
+#filtering out the linked positions
+#change the positions file, need to swap the colon to an underscore
+cd $workdir/variant_calling/angsd_highQ/LD
+cp 118samps_LD_unlinked.pos edit_118samps_LD_unlinked.pos
+sed -i 's#:#_#g' edit_118samps_LD_unlinked.pos
+
+python
+import pandas as pd
+df = pd.read_csv("../118samps.beagle", sep='\t', index_col=0, header='infer')
+filter = pd.read_csv("edit_118samps_LD_unlinked.pos", index_col=0, header=None)
+df2 = pd.merge(df, filter, left_index=True, right_index=True)
+df2.to_csv("118samps_noLD.beagle", index=True, header=True, sep='\t', index_label='marker') #need to save out as a tsv, and label the index properly, bc python gets rid of the index name by default
+quit()
+
+
+##########
+#filtering out the linked positions from the vcf file
+cd $workdir/variant_calling/angsd_highQ/LD
+#re edit the positions file to work for the vcf
+cp 118samps_LD_unlinked.pos vcf_edit_118samps_LD_unlinked.pos
+#replace the colon with a tab to work with vcf tools
+sed -i 's#:#\t#g' vcf_edit_118samps_LD_unlinked.pos
+
+#filter the vcf file 
+vcftools --vcf ../118samps.recode.vcf --positions vcf_edit_118samps_LD_unlinked.pos --recode --out 118samps_noLD
+
+
+##########
+#filtering out the linked positions from the low q vcf file
+cd $workdir/variant_calling/angsd/LD
+#re edit the positions file to work for the vcf
+cp 118samps_LD_unlinked.pos vcf_edit_118samps_LD_unlinked.pos
+#replace the colon with a tab to work with vcf tools
+sed -i 's#:#\t#g' vcf_edit_118samps_LD_unlinked.pos
+
+#filter the vcf file 
+vcftools --vcf ../118samps.recode.vcf --positions vcf_edit_118samps_LD_unlinked.pos --recode --out 118samps_noLD
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+#######9. CALCULATING THE PCA COVARIANCES
+#set working directory
+workdir=$HOME/Datafiles/Bats/Brandtii_Eu_pop
+#creating the positions file
+#should be able to use the depth file calculated for the high quality samps as this should be in the same order
+vcftools --vcf $workdir/variant_calling/angsd/118samps.recode.vcf --depth --out 118samps
+mkdir $workdir/PCA
+mkdir $workdir/PCA/118samps
+cat $workdir/variant_calling/angsd/118samps.idepth | cut -f1 | sed '1d' > $workdir/PCA/118samps/118samps_pop.info
+#manually add each population on
+vim $workdir/PCA/118samps/118samps_pop.info
+#check that each of the populations are named correctly
+cat $workdir/PCA/118samps/118samps_pop.info | cut -f1 | sort | uniq | wc -l
+
+#cut only the first column for the PCA run
+cut -f1 $workdir/PCA/118samps/118samps_pop.info  > $workdir/PCA/118samps/118samps_pop.label
+
+#zip the beagle file, if it needs it (keeping the same)
+gzip -k $workdir/variant_calling/angsd/LD/118samps_noLD.beagle
+
+#then run to estimate the individual allele frequencies 
+#need to be in the ~/pcangsd folder for this to work
+cd ~/pcangsd_test
+PCANGSD=pcangsd1/pcangsd.py
+python $PCANGSD --beagle $workdir/variant_calling/angsd/LD/118samps_noLD.beagle.gz -t 192 -o $workdir/PCA/118samps/118samps
+
+#plot the covarariantce files in R
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+#######10. CALCULATING RELATEDNESS FOR PCA OUTLIERS
+workdir=$HOME/Datafiles/Bats/Brandtii_Eu_pop
+mkdir -p $workdir/PCA/118samps/outlier_relatedness/
+mkdir -p $workdir/PCA/118samps/outlier_relatedness/no_LD
+vcftools --vcf $workdir/variant_calling/angsd/LD/118samps_noLD.recode.vcf --relatedness --out $workdir/PCA/118samps/outlier_relatedness/no_LD/118compare_rel1
+plink --allow-extra-chr --vcf $workdir/variant_calling/angsd/LD/118samps_noLD.recode.vcf --genome --out  $workdir/PCA/118samps/outlier_relatedness/no_LD/118compare_info
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+#######11. ADMIXTURE CALCULATIONS
+workdir=$HOME/Datafiles/Bats/Brandtii_Eu_pop
+PCANGSD=pcangsd1/pcangsd.py
+# Perform PC-based selection scan and estimate admixture proportions
+cd ~/pcangsd_test
+python $PCANGSD --beagle $workdir/variant_calling/angsd/LD/118samps_noLD.beagle.gz -t 192 -o $workdir/admixture/pcangsd_admix/118samps_pcangsd_admix_noE --selection --admix
+
+#running with set E values
+python $PCANGSD --beagle $workdir/variant_calling/angsd/LD/118samps_noLD.beagle.gz -e 1 -t 192 -o $workdir/admixture/pcangsd_admix/118samps_pcangsd_E1 --selection --admix
+python $PCANGSD --beagle $workdir/variant_calling/angsd/LD/118samps_noLD.beagle.gz -e 2 -t 192 -o $workdir/admixture/pcangsd_admix/118samps_pcangsd_E2 --selection --admix
+python $PCANGSD --beagle $workdir/variant_calling/angsd/LD/118samps_noLD.beagle.gz -e 3 -t 192 -o $workdir/admixture/pcangsd_admix/118samps_pcangsd_E3 --selection --admix
+python $PCANGSD --beagle $workdir/variant_calling/angsd/LD/118samps_noLD.beagle.gz -e 4 -t 192 -o $workdir/admixture/pcangsd_admix/118samps_pcangsd_E4 --selection --admix
+python $PCANGSD --beagle $workdir/variant_calling/angsd/LD/118samps_noLD.beagle.gz -e 5 -t 192 -o $workdir/admixture/pcangsd_admix/118samps_pcangsd_E5 --selection --admix
+python $PCANGSD --beagle $workdir/variant_calling/angsd/LD/118samps_noLD.beagle.gz -e 6 -t 192 -o $workdir/admixture/pcangsd_admix/118samps_pcangsd_E6 --selection --admix
+python $PCANGSD --beagle $workdir/variant_calling/angsd/LD/118samps_noLD.beagle.gz -e 7 -t 192 -o $workdir/admixture/pcangsd_admix/118samps_pcangsd_E7 --selection --admix
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+###########12. BAYENV
+#running bayenv without my related individuals
+workdir=$HOME/Datafiles/Bats/Brandtii_Eu_pop
+
+#make list with the first of each of the relateded pairings that i am deleting
+cat > $workdir/variant_calling/angsd_highQ/vcf_DP_filtering/relatedness_Aindv
+130-AL82
+57-3840
+
+#filtering the vcf, removing one of each of the related pairs
+vcftools --vcf $workdir/variant_calling/angsd_highQ/vcf_DP_filtering/min2_118_noLD_75mm.recode.vcf --remove $workdir/variant_calling/angsd_highQ/vcf_DP_filtering/relatedness_Aindv --recode --out $workdir//variant_calling/angsd_highQ/vcf_DP_filtering/min2_116_noLD_75mm
+
+#make directory for the new stuff to go into
+mkdir -p $workdir/bayenv/
+mkdir -p $workdir/bayenv/116samps
+
+
+#get the sample ids out of the vcf file
+bcftools query -l $workdir/variant_calling/angsd_highQ/LD/118samps_noLD.recode.vcf > $workdir/bayenv/116samps/sample_ids
+#manually add in the populations
+vim $workdir/bayenv/116samps/sample_ids
+
+#create spid file (can be copied by saving out the SPID from the gui download of pgdspider), and write to exclude non-polymorphic snps, take the most likely genotype, and assign half missing genotypes as full missing
+vim $workdir/bayenv/116samps/strict.spid
+
+#run pgd spider to create the snpsfile 
+cd $workdir/bayenv/116samps
+java -Xms2000G -jar ~/PGDSpider_2.1.1.5/PGDSpider2-cli.jar -inputfile ../../variant_calling/angsd_highQ/vcf_DP_filtering/min2_116_noLD_75mm.recode.vcf -inputformat VCF -outputfile 116samps_strict -outputformat BAYENV -spid strict.spid
+
+#create the new bayenv matrices
+#BEGIN BAYENV
+BAYENV=$HOME/bayenv2
+workdir=$HOME/Datafiles/Bats/Brandtii_Eu_pop
+new=$workdir/bayenv/116samps
+
+#1. command to estimate the covariance matrix
+$BAYENV -i $new/116samps_strict -p 7 -k 100000 -r 21783 > $new/116samps_strict_rep1.matrix
+$BAYENV -i $new/116samps_strict -p 7 -k 100000 -r 40375 > $new/116samps_strict_rep2.matrix
+$BAYENV -i $new/116samps_strict -p 7 -k 100000 -r 31010 > $new/116samps_strict_rep3.matrix
+
+#get the last matrix for each replicate
+#get out the last matrix iteration
+for i in {1..3}; do
+	tail -n 8 $new/116samps_strict_rep${i}.matrix | head -n 7 > $new/116samps_strict_rep${i}_last.matrix;
+done
+
+#get the average of the last matrices
+#get average of each cell with python
+cd $new
+python
+import pandas as pd
+df1 = pd.read_csv("116samps_strict_rep1_last.matrix", sep="\t", header=None)
+df2 = pd.read_csv("116samps_strict_rep2_last.matrix", sep="\t", header=None)
+df3 = pd.read_csv("116samps_strict_rep3_last.matrix", sep="\t", header=None)
+df_mean = (df1+df2+df3)/3
+
+df_mean.to_csv("116samps_strict_mean.matrix", sep="\t", header=False, index=False)
+
+#####
+#have to make the snp files with the new allele frequencies
+mkdir /scratch/flora2
+
+BAYENV=$HOME/bayenv2
+workdir=$HOME/Datafiles/Bats/Brandtii_Eu_pop
+new=$workdir/bayenv/116samps
+scratchdir2=/scratch/flora2
+
+cd $new
+
+python
+import pandas as pd
+#read in the snpsfile as a csv, with no header, and tab separated
+df = pd.read_csv("116samps_strict", header=None, sep='\t')
+#read in names as a list
+with open('sample_loci_info_loci.txt') as f:
+    names = f.read().splitlines()
+
+max = len(names)   
+	
+for i in range(0, max+1):
+	print(i)
+	print(names[i])
+	sub = df.iloc[2*i:2*i+2,]
+	sub.to_csv("/scratch/flora2/" + names[i], sep='\t', index=False, header=False)
+
+
+## make directory for each environmental variale
+#environfiles saved in the base directory $workdir/bayenv/
+mkdir $new/lat
+mkdir $new/long
+mkdir $new/karst
+mkdir $new/temp
+mkdir $new/precip
+mkdir $new/myo
+mkdir $new/wnd
+
+#run each environmental variable five times, with spearmans rho also calculated
+#REPLICATE 1
+while read snp; do
+	$BAYENV -i ${scratchdir2}/${snp} -m $new/116samps_strict_mean.matrix -e $workdir/bayenv/latitude_environfile.tsv -p 7 -k 100000 -n 1 -t -c -X -r 671 -o $new/lat/strict_lat_rep1
+done < $new/sample_loci_info_loci.txt
+
+while read snp; do
+	$BAYENV -i ${scratchdir2}/${snp} -m $new/116samps_strict_mean.matrix -e $workdir/bayenv/longitude_environfile.tsv -p 7 -k 100000 -n 1 -t -c -X -r 671 -o $new/long/strict_long_rep1
+done < $new/sample_loci_info_loci.txt
+
+while read snp; do
+	$BAYENV -i ${scratchdir2}/${snp} -m $new/116samps_strict_mean.matrix -e $workdir/bayenv/karst_environfile.tsv -p 7 -k 100000 -n 1 -t -c -X -r 671 -o $new/karst/strict_karst_rep1
+done < $new/sample_loci_info_loci.txt
+
+while read snp; do
+	$BAYENV -i ${scratchdir2}/${snp} -m $new/116samps_strict_mean.matrix -e $workdir/bayenv/temp_environfile.tsv -p 7 -k 100000 -n 1 -t -c -X -r 671 -o $new/temp/strict_temp_rep1
+done < $new/sample_loci_info_loci.txt
+
+while read snp; do
+	$BAYENV -i ${scratchdir2}/${snp} -m $new/116samps_strict_mean.matrix -e $workdir/bayenv/precip_environfile.tsv -p 7 -k 100000 -n 1 -t -c -X -r 671 -o $new/precip/strict_precip_rep1
+done < $new/sample_loci_info_loci.txt
+
+while read snp; do
+	$BAYENV -i ${scratchdir2}/${snp} -m $new/116samps_strict_mean.matrix -e $workdir/bayenv/myomyo_environfile.tsv -p 7 -k 100000 -n 1 -t -c -X -r 671 -o $new/myo/strict_myo_rep1
+done < $new/sample_loci_info_loci.txt
+
+while read snp; do
+	$BAYENV -i ${scratchdir2}/${snp} -m $new/116samps_strict_mean.matrix -e $workdir/bayenv/wnd_environfile.tsv -p 7 -k 100000 -n 1 -t -c -X -r 671 -o $new/wnd/strict_wnd_rep1
+done < $new/sample_loci_info_loci.txt
+
+
+#REPLICATE 2
+while read snp; do
+	$BAYENV -i ${scratchdir2}/${snp} -m $new/116samps_strict_mean.matrix -e $workdir/bayenv/latitude_environfile.tsv -p 7 -k 100000 -n 1 -t -c -X -r 515 -o $new/lat/strict_lat_rep2
+done < $new/sample_loci_info_loci.txt
+
+while read snp; do
+	$BAYENV -i ${scratchdir2}/${snp} -m $new/116samps_strict_mean.matrix -e $workdir/bayenv/longitude_environfile.tsv -p 7 -k 100000 -n 1 -t -c -X -r 515 -o $new/long/strict_long_rep2
+done < $new/sample_loci_info_loci.txt
+
+while read snp; do
+	$BAYENV -i ${scratchdir2}/${snp} -m $new/116samps_strict_mean.matrix -e $workdir/bayenv/karst_environfile.tsv -p 7 -k 100000 -n 1 -t -c -X -r 515 -o $new/karst/strict_karst_rep2
+done < $new/sample_loci_info_loci.txt
+
+while read snp; do
+	$BAYENV -i ${scratchdir2}/${snp} -m $new/116samps_strict_mean.matrix -e $workdir/bayenv/temp_environfile.tsv -p 7 -k 100000 -n 1 -t -c -X -r 515 -o $new/temp/strict_temp_rep2
+done < $new/sample_loci_info_loci.txt
+
+while read snp; do
+	$BAYENV -i ${scratchdir2}/${snp} -m $new/116samps_strict_mean.matrix -e $workdir/bayenv/precip_environfile.tsv -p 7 -k 100000 -n 1 -t -c -X -r 515 -o $new/precip/strict_precip_rep2
+done < $new/sample_loci_info_loci.txt
+
+while read snp; do
+	$BAYENV -i ${scratchdir2}/${snp} -m $new/116samps_strict_mean.matrix -e $workdir/bayenv/myomyo_environfile.tsv -p 7 -k 100000 -n 1 -t -c -X -r 515 -o $new/myo/strict_myo_rep2
+done < $new/sample_loci_info_loci.txt
+
+while read snp; do
+	$BAYENV -i ${scratchdir2}/${snp} -m $new/116samps_strict_mean.matrix -e $workdir/bayenv/wnd_environfile.tsv -p 7 -k 100000 -n 1 -t -c -X -r 515 -o $new/wnd/strict_wnd_rep2
+done < $new/sample_loci_info_loci.txt
+
+
+#REPLICATE 3
+while read snp; do
+	$BAYENV -i ${scratchdir2}/${snp} -m $new/116samps_strict_mean.matrix -e $workdir/bayenv/latitude_environfile.tsv -p 7 -k 100000 -n 1 -t -c -X -r 164 -o $new/lat/strict_lat_rep3
+done < $new/sample_loci_info_loci.txt
+
+while read snp; do
+	$BAYENV -i ${scratchdir2}/${snp} -m $new/116samps_strict_mean.matrix -e $workdir/bayenv/longitude_environfile.tsv -p 7 -k 100000 -n 1 -t -c -X -r 164 -o $new/long/strict_long_rep3
+done < $new/sample_loci_info_loci.txt
+
+while read snp; do
+	$BAYENV -i ${scratchdir2}/${snp} -m $new/116samps_strict_mean.matrix -e $workdir/bayenv/karst_environfile.tsv -p 7 -k 100000 -n 1 -t -c -X -r 164 -o $new/karst/strict_karst_rep3
+done < $new/sample_loci_info_loci.txt
+
+while read snp; do
+	$BAYENV -i ${scratchdir2}/${snp} -m $new/116samps_strict_mean.matrix -e $workdir/bayenv/temp_environfile.tsv -p 7 -k 100000 -n 1 -t -c -X -r 164 -o $new/temp/strict_temp_rep3
+done < $new/sample_loci_info_loci.txt
+
+while read snp; do
+	$BAYENV -i ${scratchdir2}/${snp} -m $new/116samps_strict_mean.matrix -e $workdir/bayenv/precip_environfile.tsv -p 7 -k 100000 -n 1 -t -c -X -r 164 -o $new/precip/strict_precip_rep3
+done < $new/sample_loci_info_loci.txt
+
+while read snp; do
+	$BAYENV -i ${scratchdir2}/${snp} -m $new/116samps_strict_mean.matrix -e $workdir/bayenv/myomyo_environfile.tsv -p 7 -k 100000 -n 1 -t -c -X -r 164 -o $new/myo/strict_myo_rep3
+done < $new/sample_loci_info_loci.txt
+
+while read snp; do
+	$BAYENV -i ${scratchdir2}/${snp} -m $new/116samps_strict_mean.matrix -e $workdir/bayenv/wnd_environfile.tsv -p 7 -k 100000 -n 1 -t -c -X -r 164 -o $new/wnd/strict_wnd_rep3
+done < $new/sample_loci_info_loci.txt
+
+
+#REPLICATE 4
+while read snp; do
+	$BAYENV -i ${scratchdir2}/${snp} -m $new/116samps_strict_mean.matrix -e $workdir/bayenv/latitude_environfile.tsv -p 7 -k 100000 -n 1 -t -c -X -r 744 -o $new/lat/strict_lat_rep4
+done < $new/sample_loci_info_loci.txt
+
+while read snp; do
+	$BAYENV -i ${scratchdir2}/${snp} -m $new/116samps_strict_mean.matrix -e $workdir/bayenv/longitude_environfile.tsv -p 7 -k 100000 -n 1 -t -c -X -r 744 -o $new/long/strict_long_rep4
+done < $new/sample_loci_info_loci.txt
+
+while read snp; do
+	$BAYENV -i ${scratchdir2}/${snp} -m $new/116samps_strict_mean.matrix -e $workdir/bayenv/karst_environfile.tsv -p 7 -k 100000 -n 1 -t -c -X -r 744 -o $new/karst/strict_karst_rep4
+done < $new/sample_loci_info_loci.txt
+
+while read snp; do
+	$BAYENV -i ${scratchdir2}/${snp} -m $new/116samps_strict_mean.matrix -e $workdir/bayenv/temp_environfile.tsv -p 7 -k 100000 -n 1 -t -c -X -r 744 -o $new/temp/strict_temp_rep4
+done < $new/sample_loci_info_loci.txt
+
+while read snp; do
+	$BAYENV -i ${scratchdir2}/${snp} -m $new/116samps_strict_mean.matrix -e $workdir/bayenv/precip_environfile.tsv -p 7 -k 100000 -n 1 -t -c -X -r 744 -o $new/precip/strict_precip_rep4
+done < $new/sample_loci_info_loci.txt
+
+while read snp; do
+	$BAYENV -i ${scratchdir2}/${snp} -m $new/116samps_strict_mean.matrix -e $workdir/bayenv/myomyo_environfile.tsv -p 7 -k 100000 -n 1 -t -c -X -r 744 -o $new/myo/strict_myo_rep4
+done < $new/sample_loci_info_loci.txt
+
+while read snp; do
+	$BAYENV -i ${scratchdir2}/${snp} -m $new/116samps_strict_mean.matrix -e $workdir/bayenv/wnd_environfile.tsv -p 7 -k 100000 -n 1 -t -c -X -r 744 -o $new/wnd/strict_wnd_rep4
+done < $new/sample_loci_info_loci.txt
+
+
+#REPLICATE 5
+while read snp; do
+	$BAYENV -i ${scratchdir2}/${snp} -m $new/116samps_strict_mean.matrix -e $workdir/bayenv/latitude_environfile.tsv -p 7 -k 100000 -n 1 -t -c -X -r 835 -o $new/lat/strict_lat_rep5
+done < $new/sample_loci_info_loci.txt
+
+while read snp; do
+	$BAYENV -i ${scratchdir2}/${snp} -m $new/116samps_strict_mean.matrix -e $workdir/bayenv/longitude_environfile.tsv -p 7 -k 100000 -n 1 -t -c -X -r 835 -o $new/long/strict_long_rep5
+done < $new/sample_loci_info_loci.txt
+
+while read snp; do
+	$BAYENV -i ${scratchdir2}/${snp} -m $new/116samps_strict_mean.matrix -e $workdir/bayenv/karst_environfile.tsv -p 7 -k 100000 -n 1 -t -c -X -r 835 -o $new/karst/strict_karst_rep5
+done < $new/sample_loci_info_loci.txt
+
+while read snp; do
+	$BAYENV -i ${scratchdir2}/${snp} -m $new/116samps_strict_mean.matrix -e $workdir/bayenv/temp_environfile.tsv -p 7 -k 100000 -n 1 -t -c -X -r 835 -o $new/temp/strict_temp_rep5
+done < $new/sample_loci_info_loci.txt
+
+while read snp; do
+	$BAYENV -i ${scratchdir2}/${snp} -m $new/116samps_strict_mean.matrix -e $workdir/bayenv/precip_environfile.tsv -p 7 -k 100000 -n 1 -t -c -X -r 835 -o $new/precip/strict_precip_rep5
+done < $new/sample_loci_info_loci.txt
+
+while read snp; do
+	$BAYENV -i ${scratchdir2}/${snp} -m $new/116samps_strict_mean.matrix -e $workdir/bayenv/myomyo_environfile.tsv -p 7 -k 100000 -n 1 -t -c -X -r 835 -o $new/myo/strict_myo_rep5
+done < $new/sample_loci_info_loci.txt
+
+while read snp; do
+	$BAYENV -i ${scratchdir2}/${snp} -m $new/116samps_strict_mean.matrix -e $workdir/bayenv/wnd_environfile.tsv -p 7 -k 100000 -n 1 -t -c -X -r 835 -o $new/wnd/strict_wnd_rep5
+done < $new/sample_loci_info_loci.txt
