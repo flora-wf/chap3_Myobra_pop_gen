@@ -1,0 +1,21 @@
+#looking at the Fritze 2018 data, looking at the white nose presence
+#set working directory
+setwd("~/Documents/coding_scripts/Chap3")
+library("dplyr")
+#read in the original dataframes
+df <- read.csv("Fritze2018_data.csv", header=TRUE)
+#create list of the countries important
+countries <- c("England", "Finland", "Germany", "Latvia", "Poland", "Russian Federation", "Switzerland")
+#filter only the countries I'm interested in
+df2 <- filter(df, df$Country.Island %in% countries)
+#get the frequency of observations for each country
+freq <- df2 %>% group_by(Country.Island) %>% summarise(Freq=n())
+#get the frequency of WND observations for each country
+fungi <- aggregate(df2$Bats.with.fungi, by=list(Country.Island=df2$Country.Island), FUN=sum)
+#merge these two dfs
+df3 <- merge(freq, fungi, by="Country.Island")
+#rename the wnd frequency column
+df3 <- df3 %>% rename(WND_Freq = x)
+
+#save out data
+write.csv(df3, file="Fritze2018_WNDfreq.csv", row.names = FALSE, quote=FALSE, col.names = TRUE)
