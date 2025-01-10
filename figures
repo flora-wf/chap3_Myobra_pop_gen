@@ -1,0 +1,273 @@
+#CHAPTER 3 FIGURES
+#all packages
+library(ggplot2)
+library(tidyverse)
+library(RColorBrewer)
+library(viridis)
+library(vegan)
+library(dismo)
+library(dartR) 
+library(adegenet)
+library(dplyr)
+library(reshape2)
+library(ggh4x)
+library(ggpubr)
+
+#set working directory
+setwd("~/Documents/coding_scripts/Chap3")
+
+#colour scales
+#colour blind friendly
+# The palette with black:
+cbbPalette <- c("#000000", "#E69F00", "#56B4E9", "#009E73", "#0072B2", "#D55E00", "#CC79A7")
+#with grey
+cbPalette <- c("#999999", "#E69F00", "#56B4E9", "#009E73", "#0072B2", "#D55E00", "#CC79A7")
+
+#FIG 1: heatmap with the weighted fst values
+df1 <- read.table("ibd/fst_weight.csv", sep=",")
+#df1 <- read.table("mitochondrial/fst_mito_weighted.csv", sep=",")
+matrix1 <- as.matrix(df1)
+colnames(matrix1) <- c("England", "Finland", "Germany", "Latvia", "Poland", "Russia", "Switzerland")
+row.names(matrix1) <- c("England", "Finland", "Germany", "Latvia", "Poland", "Russia", "Switzerland")
+df1 <- matrix1 %>% as.data.frame() %>% rownames_to_column("popA") %>% pivot_longer(-c(popA), names_to = "popB") %>% as.data.frame()
+#replace 0s with NA
+df1[df1 == 0] <- NA
+
+plot1 <- df1 %>% ggplot(aes(x=popA, y=popB, fill=value)) + geom_raster() + 
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(), panel.background = element_blank(), axis.line = element_line(colour = "black"), 
+        axis.title.x=element_blank(), axis.title.y=element_blank(), axis.text.x = element_text(angle=270, hjust=0, size = 10), axis.text.y = element_text(size = 10)) + 
+  scale_fill_viridis(option="B", na.value = "white") +
+  guides(fill=guide_legend(title=(bquote(F[ST]))))
+##w:480, h:405
+
+
+#FIG 2: isolation by distance
+distance <- read.table("ibd/distance.csv", sep=",")
+distance_matrix <- as.matrix(distance)
+colnames(distance_matrix) <- c("England", "Finland", "Germany", "Latvia", "Poland", "Russia", "Switzerland")
+row.names(distance_matrix) <- c("England", "Finland", "Germany", "Latvia", "Poland", "Russia", "Switzerland")
+#make distance matrices
+distance_matrix <- as.dist(distance_matrix)
+fst_matrix <- as.dist(matrix1)
+
+#set the y lab, as need an expression for this
+testY2 <- expression(paste("Genetic distance (", F[ST],")",sep=""))
+#need to run the gl.ib2_ibdplotting.R code first, to put this function in my environment!
+plot2 <- gl.ibd2(
+  Dgen = fst_matrix,
+  Dgeo = distance_matrix
+)
+#w:600, h: 480
+
+
+
+#FIG 3a: PCA: PC1 v PC2
+#read in the original dataframes
+pop<-read.table("PCA/118samps_pop.info")
+C <- as.matrix(read.table("PCA/118samps.cov"))
+e <- eigen(C)
+
+#getting out the first 5 pcs, and binding to pop data
+df3 <- as.data.frame(e$vectors[,1:5])
+df3x <- cbind(df3, pop)
+names = c("PC1", "PC2", "PC3", "PC4", "PC5", "POP", "SAMP")
+colnames(df3x) =c(names)
+
+#plot 3a
+plot3a <-ggplot(df3x, aes(PC1, PC2, color=POP)) +
+  geom_point() + theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+                       panel.background = element_blank(), axis.line = element_line(colour = "black"),
+                       axis.text.x = element_text(size = 11), axis.text.y = element_text(size = 11),
+                       legend.text=element_text(size=11)) +
+  scale_color_manual(labels = c("England", "Finland", "Germany", "Latvia", "Poland", "Russia", "Switzerland"), values = cbbPalette) +
+  guides(color=guide_legend(title="Population"))
+#w:620 h:415
+
+#FIG 3b: PCA: PC1 v PC3
+#plot 3b
+plot3b <- ggplot(df3x, aes(PC1, PC3, color=POP)) +
+  geom_point() + theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+                       panel.background = element_blank(), axis.line = element_line(colour = "black"),
+                       axis.text.x = element_text(size = 11), axis.text.y = element_text(size = 11),
+                       legend.text=element_text(size=11)) +
+  scale_color_manual(labels = c("England", "Finland", "Germany", "Latvia", "Poland", "Russia", "Switzerland"), values = cbbPalette) +
+  guides(color=guide_legend(title="Population"))
+#w:620 h:415
+
+
+#FIG 4: relatedness ajk values
+##### vcf_rel1
+df4 <- read.table("PCA/no_LD/118compare_rel1.relatedness", sep="\t", header = TRUE) 
+df4b <- df4[df4$RELATEDNESS_AJK > 0.15 & df4$RELATEDNESS_AJK < 0.2,]
+#df4x <- df4[df4$RELATEDNESS_AJK < 1,]
+
+plot4 <- ggplot(df4, aes(x= INDV1, y= RELATEDNESS_AJK)) + geom_point(alpha=0.3) + 
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+        panel.background = element_blank(), axis.line = element_line(colour = "black"),
+        axis.text.x = element_text(angle=270, hjust=0)) +
+  xlab("Individual ID") + ylab("Relatedness AJK") +
+  geom_point(data=df4b, aes(x=INDV1, y=RELATEDNESS_AJK), color='hotpink')
+#w:1235, h:370
+
+#ggplot(df4x, aes(x= INDV1, y= RELATEDNESS_AJK)) + geom_point(alpha=0.3) + 
+#  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+#        panel.background = element_blank(), axis.line = element_line(colour = "black"),
+#        axis.text.x = element_text(angle=270, hjust=0)) +
+#  xlab("Individual ID") + ylab("Relatedness AJK") +
+#  geom_point(data=df4b, aes(x=INDV1, y=RELATEDNESS_AJK), color='hotpink')
+
+
+  
+#FIG 5: K2 admixture plot
+#using same pop info file as before
+pop<-read.table("PCA/118samps_pop.info")
+
+pop5 <- pop %>% 
+  rename(
+    pop = V1,
+    sample = V2)
+
+# Read inferred admixture proportions file
+q<-read.table("admix/118samps_pcangsd_admix_noE_3.admix.2.Q")
+
+#merge and reorder the dataframe
+df5 <- cbind(pop5, q)
+df5 <- melt(df5, na.rm = FALSE, id = c('pop', 'sample'))
+df5 <- df5[order(df5$pop, df5$sample),]
+strip <- strip_themed(background_x = elem_list_rect(fill = cbbPalette))
+
+#plot
+
+plot5 <- df5 %>%
+  ggplot( aes(x=fct_inorder(factor(sample)), y=value, fill=factor(variable, levels=c("V2", "V1")))) +
+  geom_bar(position="stack", stat="identity") +
+  scale_fill_manual(values = alpha(c("darkolivegreen2", "darkolivegreen4"),), labels = c("K1", "K2")) +
+  theme(axis.text.x = element_text(angle=270)) +
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+        panel.background = element_blank(), axis.line = element_line(colour = "black")) +
+  ylab("Admixture proportion") +
+  facet_grid2(~pop, scales = "free_x", switch="x", space = "free_x", strip=strip) + # ADDED
+  theme(axis.title.x=element_blank(),legend.title=element_blank(),
+        legend.text =element_text(size=15),axis.title.y=element_text(size=13),
+        legend.position="right",axis.text.x=element_text(size=10, hjust=0),
+        axis.text.y=element_text(size=10),
+        strip.text = element_text(size = 10, colour = "white"), # ADDED
+        strip.placement = 'outside', # ADDED
+        panel.spacing = unit(0, units = "cm"))
+
+#FIG 5b: K3 admixture plot
+#using same pop info file as before
+pop5 <- pop %>% 
+  rename(
+    pop = V1,
+    sample = V2)
+
+# Read inferred admixture proportions file
+q5b<-read.table("admix/118samps_pcangsd_admix.admix.3.Q")
+
+#merge and reorder the dataframe
+df5b <- cbind(pop5, q5b)
+df5b <- melt(df5b, na.rm = FALSE, id = c('pop', 'sample'))
+df5b <- df5b[order(df5b$pop, df5b$sample),]
+strip <- strip_themed(background_x = elem_list_rect(fill = cbbPalette))
+
+#plot
+plot5b <- df5b %>%
+  ggplot( aes(x=fct_inorder(factor(sample)), y=value, fill=variable)) +
+  geom_bar(position="stack", stat="identity") +
+  scale_fill_manual(values = alpha(c("darkgoldenrod2", "lightgoldenrod1", "darkgoldenrod"),), labels = c("K1", "K2", "K3")) +
+  theme(axis.text.x = element_text(angle=270)) +
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+        panel.background = element_blank(), axis.line = element_line(colour = "black"), axis.title.x=element_blank(),legend.title=element_blank(),
+        legend.text =element_text(size=15),axis.title.y=element_text(size=13),
+        legend.position="right",axis.text.x=element_text(size=10, hjust=0),
+        axis.text.y=element_text(size=10)) +
+  ylab("Admixture proportion")
+
+totalplot5 <- ggarrange(plot5b, plot5, 
+          ncol=1, nrow=2)
+#w:1460, h:800
+
+#FIG 6: sliding window myomyo contrast
+#this reads in with positions as row names 
+df6 <- read.csv("fst/slidingwindow_myomyo_10kbW_2kbS.tsv", sep="\t", fill = TRUE, header= TRUE)
+#rename the columns
+df6 <- df6 %>% 
+  rename(
+    chr = region,
+    midPos = chr,
+    Nsites = midPos,
+    FstW = Nsites)
+
+#get rid of the mitochondrial data
+df6 <- df6[df6$chr != "NC_029346.1",]
+#add in an accumulating number to plot position along the genome
+df6$genomePosKB <- (((1:nrow(df6))*2000)-1000)/1000
+#make a subset with the high values
+high_selection6 <- df6[df6$FstW > 0.1,]
+Vhigh_selection6 <- high_selection6[high_selection6$FstW > 0.15,]
+mid_selection6 <- df6[df6$FstW > 0.05,]
+
+#add in numbering system that shows the chromosome breaks
+df6 <- as.data.frame(df6 %>% group_by(chr) %>% mutate(no = row_number()))
+
+testY67 <- expression(paste("Weighted ", F[ST],sep=""))
+#plot the data
+plot6 <- ggplot(df6, aes(x= genomePosKB, y= FstW))  + 
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+        panel.background = element_blank(), axis.line = element_line(colour = "black")) +
+  geom_vline(aes(xintercept = genomePosKB), data = df6 %>% filter(no ==1), colour = "lightgrey") + 
+  geom_point(alpha = 0.3) +
+  geom_point(data=high_selection6, aes(x=genomePosKB, y=FstW), color='hotpink', alpha = 0.6) +
+  ylab(testY67) +
+  xlab("Genome position (kb)")
+
+
+
+#FIG 7: sliding window wnd contrast
+#this reads in with positions as row names 
+df7 <- read.csv("fst/slidingwindow_wnd_10kbW_2kbS.tsv", sep="\t", fill = TRUE, header= TRUE)
+#rename the columns
+df7 <- df7 %>% 
+  rename(
+    chr = region,
+    midPos = chr,
+    Nsites = midPos,
+    FstW = Nsites)
+
+#get rid of the mitochondrial data
+df7 <- df7[df7$chr != "NC_029346.1",]
+#add in an accumulating number to plot position along the genome
+df7$genomePosKB <- (((1:nrow(df7))*2000)-1000)/1000
+#make a subset with the high values
+high_selection7 <- df7[df7$FstW > 0.1,]
+Vhigh_selection7 <- high_selection7[high_selection7$FstW > 0.15,]
+mid_selection7 <- df7[df7$FstW > 0.05,]
+
+#add in numbering system that shows the chromosome breaks
+df7 <- as.data.frame(df7 %>% group_by(chr) %>% mutate(no = row_number()))
+
+testY67 <- expression(paste("Weighted ", F[ST],sep=""))
+#plot the data
+plot7 <- ggplot(df7, aes(x= genomePosKB, y= FstW))  + 
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+        panel.background = element_blank(), axis.line = element_line(colour = "black")) +
+  geom_vline(aes(xintercept = genomePosKB), data = df6 %>% filter(no ==1), colour = "lightgrey") + 
+  geom_point(alpha = 0.3) +
+  geom_point(data=high_selection7, aes(x=genomePosKB, y=FstW), color='hotpink', alpha = 0.6) +
+  ylab(testY67) +
+  xlab("Genome position (kb)")
+#570, 380?
+
+
+
+#FIG8: interactive map
+
+#This gives a very nice interactive map
+library(tidyverse)
+library(mapview)
+df8<-read.csv("env_variables.csv", header=TRUE)
+mapview(df8, xcol = "Longitude", ycol = "Latitude", crs = 4326, grid = FALSE, zcol="Population", col.regions = cbbPalette, layer.name = "Population")
+
+
+
